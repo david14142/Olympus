@@ -3,6 +3,7 @@
   global.Oj = global.Oj || {} ;
   var Oj = global.Oj;
 
+  // todo: print something for nulls 
   Oj.DataFrame.prototype.print = function(rows) {
     if (typeof rows == 'undefined' || rows === 0) rows = this.length;
     console.log(this.columns.join('\t'));

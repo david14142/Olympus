@@ -9,6 +9,7 @@
 
   // DataFrame constructor
   Oj.DataFrame = function(data) {
+    data = data || Object.create(null);
     this.columns = Object.keys(data);
     this.indices = {};
     this.data = data;
@@ -62,7 +63,7 @@
 
   Oj.DataFrame.prototype.map = function(callback, append) {
     var row;
-    var dataset = new Oj.DataFrame({});
+    var dataset = new Oj.DataFrame();
     for(let i=0; i < this.length ; i++) {
       row =  Object.create(null);
       for (let j=0; j < this.columns.length; j++) {
@@ -83,7 +84,7 @@
   // datafrane as its accumulator, and returns a key/value pair.  It is more
   // flexible but more difficult to use than the aggregate function.
   Oj.DataFrame.prototype.reduce = function(callback) {
-    var result = new Oj.DataFrame({});
+    var result = new Oj.DataFrame();
     result.indices.primary = new Oj.tree();
     var row = Object.create(null);
     for(let i=0; i < this.length ; i++) {
@@ -115,6 +116,7 @@
       if (typeof i == 'number') {
         row[column] = this.data[column][i];
       }
+      // need to handle i being an array ;
     }
     return row;
   }
@@ -123,7 +125,7 @@
     var row = [];
     for (let j=0; j < this.columns.length; j++) {
       let column = this.columns[j];
-      row.push(this.data[column][i]);
+      row.push(this.data[column][i] || null);
     }
     return row;
   }
@@ -155,22 +157,24 @@
 
   // surface an index - mostly useful for aggregate results to surface the
   // primary key (turn it into columns)
-  Oj.DataFrame.prototype.surface  = function(name) {
+  Oj.DataFrame.prototype.surface  = function(name, rename) {
     let tree = this.indices[name] || this.indices.primary;
-    for (let j=0; j < tree.columns.length; j++) {
-      this.data[tree.columns[j]] = [];
+    rename = rename || tree.columns;
+    if (rename.length < tree.columns.length) rename = tree.columns;
+    for (let j=0; j < rename.length; j++) {
+      this.data[rename[j]] = [];
     }
     this.columns = Object.keys(this.data);
     this.walkTree(tree.root,
       (group, key, value) => {
         if (typeof value == 'number') {
           for(let j=0; j < group.length; j++) {
-            this.data[tree.columns[j]][value] = group[j];
+            this.data[rename[j]][value] = group[j];
           }
         } else if (typeof value == 'object' && Array.isArray(value)) {
           for (let i=0; i < value.length; i++) {
             for (let j=0; j < group.length; j++) {
-              this.data[tree.columns[j]][value[i]] = group[j];
+              this.data[rename[j]][value[i]] = group[j];
             }
           }
         }
@@ -184,7 +188,7 @@
   // must) be valid identifiers.  The callback functions are passed as a
   // collection of functions they take a scalar accumulator and row of data.
   Oj.DataFrame.prototype.aggregate = function(columns, expression) {
-    var result = new Oj.DataFrame({});
+    var result = new Oj.DataFrame();
     result.indices.primary = new tree();
     var row = Object.create(null);
     var group = Object.create(null);
