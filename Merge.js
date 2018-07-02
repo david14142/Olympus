@@ -11,7 +11,7 @@
     let right_tree = right_frame.indices[right_index] || right_frame.indices.primary;
 
     // walk the left frame index
-    this.walkTree(left_tree.root,
+    this.walk(left_tree.root,
         (group, key, value) => {
 
           // construct a right frame match to each left frame index value

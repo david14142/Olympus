@@ -1,7 +1,6 @@
 
 // Core functionality - DataFrame and Index structures.
 
-
 (function(global) {
 
   global.Oj = global.Oj || {} ;
@@ -130,13 +129,16 @@
     return row;
   }
 
-  Oj.DataFrame.prototype.walkTree = function(node, callback, group) {
+  // walks out an index, calling callback on each node
+  //
+  // (group is passed to each subsequent call)
+  Oj.DataFrame.prototype.walk = function(node, callback, group) {
     if (typeof group == 'undefined') var group = [];
     for (const [key, value] of node) {
       let g = group.concat([key]);
       callback(g, key, value);
       if (value[Symbol.toStringTag] == 'Map') {
-        this.walkTree(value, callback, g);
+        this.walk(value, callback, g);
       }
     }
   }
@@ -145,6 +147,19 @@
     this.indices[name] = new tree();
     let rv = true;
     if (typeof unique == 'undefined') unique = false;
+    let group = Object.create(null);
+    for (let i=0; i < this.length ; i++) {
+      for(let j=0; j < columns.length; j++) {
+        group[columns[j]] = this.data[columns[j]][i];
+      }
+      rv = this.indices[name].insert(group, i, unique);
+    }
+    return rv;
+  }
+
+  Oj.DataFrame.prototype.order = function(name, columns) {
+    this.indices[name] = new order();
+    let rv = true;
     let group = Object.create(null);
     for (let i=0; i < this.length ; i++) {
       for(let j=0; j < columns.length; j++) {
@@ -165,7 +180,7 @@
       this.data[rename[j]] = [];
     }
     this.columns = Object.keys(this.data);
-    this.walkTree(tree.root,
+    this.walk(tree.root,
       (group, key, value) => {
         if (typeof value == 'number') {
           for(let j=0; j < group.length; j++) {
@@ -254,6 +269,7 @@
     return node.get(group[columns[columns.length-1]]);
   }
 
+  // used when building non-primary indexes
   tree.prototype.insert = function(group, index, unique) {
     this.columns = Object.keys(group).sort();
     var node = this.root;
@@ -282,6 +298,37 @@
     }
   }
 
+  // ordered indexes - used for sorting et al.
+  let order = function() {
+    this.root = new Map();
+  }
+
+  // same as tree insert, but columns aren't ordered
+  order.prototype.insert = function(group, index, nodupes) {
+    this.columns = Object.keys(group);
+    var node = this.root;
+    for (let j=0; j < this.columns.length - 1; j++) {
+      let column = this.columns[j];
+      let next = node.get(group[column]);
+      if (typeof next == 'undefined') {
+        next = new Map();
+        node.set(group[column], next);
+      }
+      node = next ;
+    }
+    var rows = node.get(group[this.columns[this.columns.length-1]]);
+    if (typeof rows == 'undefined') {
+      rows = [index];
+      node.set(group[this.columns[this.columns.length-1]], rows);
+      return true;
+    } else {
+      if (typeof nodupes == 'undefined' || nodupes == false) {
+        rows.push(index)
+        node.set(group[this.columns[this.columns.length-1]], rows);
+      }
+      return true;
+    }
+  }
 
   // Used by group-by to call a series of reduce functions on a row of data
   // this is a private function, not to be confused with Oj.aggregate
@@ -296,6 +343,35 @@
     return aggregate;
   }
 
+  Oj.PivotTable = class extends Oj.DataFrame {
+    constructor (data, expression, dimensions) {
+      super(data);
+      if (typeof expression == 'object') this.expression = expression;
+      if (typeof dimensions == 'object'
+          && typeof dimensions.rows != 'undefined'
+          && typeof dimensions.columns != 'undefined')  {
+        this.dimension(dimension.rows, dimension.columns);
+      }
+    }
+  }
+
+  Oj.PivotTable.prototype.dimension = function(rows, columns) {
+    this.row_dimension = rows;
+    this.column_dimension = columns;
+    let crosstab = rows.concat(columns);
+    // build a summary dataframe to use for cell values
+    this.summary = this.aggregate(crosstab, this.expression);
+    this.transposed_columns = new order();
+    let group = Object.create(null);
+    // builds the column dimension (header) structure
+    for (let i=0; i < this.length ; i++) {
+      for(let j=0; j < columns.length; j++) {
+        group[columns[j]] = this.data[columns[j]][i];
+      }
+      this.transposed_columns.insert(group, i, true);
+    }
+    return this;
+  }
 
 } (this));
 
