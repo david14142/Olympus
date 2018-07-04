@@ -12,16 +12,36 @@
     }
   }
 
-  // walk the primary key of the summary dataset
+  // produce a cross tabulation from a 2-d summary of data
   Oj.PivotTable.prototype.table = function(id) {
     var div = Oj.getElementById(id);
     var table = div.push('table');
     var row;
-    this.walk (this.summary.indices.primary.root,
+    let row_nest_option = true; // todo row nesting ;
+    // add a header to the table ;
+    let head = table.push('thead');
+    let hrows = [];
+    for (let j=0; j < this.dimensions[1].length; j++) {
+      hrows[j] = head.push('tr');
+      hrows[j].push('th', {colspan: this.dimensions[0].length});
+    }
+    this.breadth(this.margins[1].indices['pivot-order'].root,
       (group, key, value) => {
-        if (group.length <= this.row_dimension.length) {
-          row = table.push('tr')
-          row.push('td', '', group.toString());
+        if (value[Symbol.toStringTag] != 'Map') {
+          hrows[group.length-1].push('th', '', key.toString());
+        } else {
+          hrows[group.length-1].push('th', {colspan: value.size}, key.toString());
+        }
+      }
+    );
+    // add the table body ;
+    let body = table.push('tbody');
+    this.traverse((group, key, value) => {
+        if (group.length == this.dimensions[0].length) {
+          row = body.push('tr');
+          for (let j=0; j < group.length; j++) {
+            row.push('th', '', group[j]);
+          }
         } else {
           if (value[Symbol.toStringTag] != 'Map') {
             for (let j=0; j < this.summary.columns.length; j++) {

@@ -129,8 +129,7 @@
     return row;
   }
 
-  // walks out an index, calling callback on each node
-  //
+  // walks out an index, calling callback on each node.
   // (group is passed to each subsequent call)
   Oj.DataFrame.prototype.walk = function(node, callback, group) {
     if (typeof group == 'undefined') var group = [];
@@ -139,6 +138,40 @@
       callback(g, key, value);
       if (value[Symbol.toStringTag] == 'Map') {
         this.walk(value, callback, g);
+      }
+    }
+  }
+
+  // breadth first traversal
+  Oj.DataFrame.prototype.breadth = function(node, callback, group) {
+    if (typeof group == 'undefined') var group = [];
+    for (const [key, value] of node) {
+      let g = group.concat([key]);
+      callback(g, key, value);
+    }
+    for (const [key, value] of node) {
+      let g = group.concat([key]);
+      if (value[Symbol.toStringTag] == 'Map') {
+        this.walk(value, callback, g);
+      }
+    }
+  }
+
+  // Traverse an index in sorted order.
+  // todo : sort different columns differently
+  Oj.DataFrame.prototype.sort = function(node, callback, group) {
+    if (typeof group == 'undefined') var group = [];
+    let keys = [];
+    for (const k of node.keys()) {
+      keys.push(k);
+    }
+    keys.sort();
+    for(let k=0; k < keys.length; k++) {
+      let g = group.concat(keys[k]);
+      let v = node.get(keys[k]);
+      callback(g, keys[k], v);
+      if (v[Symbol.toStringTag] == 'Map') {
+        this.walk(v, callback, g);
       }
     }
   }
@@ -157,8 +190,10 @@
     return rv;
   }
 
-  Oj.DataFrame.prototype.order = function(name, columns) {
-    this.indices[name] = new order();
+  // creates a sorting index.  Differs from index() in the treatment of multi-column
+  // indexes: order() treats age/sex differently from sex/age
+  Oj.DataFrame.prototype.order = function(name, columns, unique) {
+    this.indices[name] = new order(columns);
     let rv = true;
     let group = Object.create(null);
     for (let i=0; i < this.length ; i++) {
@@ -192,6 +227,30 @@
               this.data[rename[j]][value[i]] = group[j];
             }
           }
+        }
+      }
+    );
+    return this;
+  }
+
+  // traverse a primary index and re-order the results (creates an order)
+  Oj.DataFrame.prototype.reorder = function(name, reorder) {
+    let tree =  this.indices.primary;
+    this.indices[name] = new order(reorder);
+    // re-arrange the group ;
+    let arrange = [];
+    for (let j=0; j < reorder.length; j++) {
+      arrange.push(this.indices.primary.columns.indexOf(reorder[j]));
+    }
+    //this.walk(tree.root,
+    this.sort(tree.root,
+      (group, key, value) => {
+        if (typeof value != 'object') {
+          let regroup = Object.create(null);
+          for(let j=0; j < arrange.length; j++) {
+            regroup[reorder[j]] = group[arrange[j]];
+          }
+          this.indices[name].insert(regroup, value);
         }
       }
     );
@@ -271,6 +330,7 @@
 
   // used when building non-primary indexes
   tree.prototype.insert = function(group, index, unique) {
+    // move this so it isn't added on each insert
     this.columns = Object.keys(group).sort();
     var node = this.root;
     for (let j=0; j < this.columns.length - 1; j++) {
@@ -299,13 +359,14 @@
   }
 
   // ordered indexes - used for sorting et al.
-  let order = function() {
+  let order = function(columns) {
     this.root = new Map();
+    this.columns = columns;
   }
 
   // same as tree insert, but columns aren't ordered
   order.prototype.insert = function(group, index, nodupes) {
-    this.columns = Object.keys(group);
+    //this.columns = Object.keys(group);
     var node = this.root;
     for (let j=0; j < this.columns.length - 1; j++) {
       let column = this.columns[j];
@@ -323,11 +384,29 @@
       return true;
     } else {
       if (typeof nodupes == 'undefined' || nodupes == false) {
-        rows.push(index)
+        if (typeof index == 'number') {
+          rows.push(index)
+        } else {
+          rows = rows.concat(index)
+        }
         node.set(group[this.columns[this.columns.length-1]], rows);
       }
       return true;
     }
+  }
+
+  // note that group is an array, not a collection
+  order.prototype.find = function(group) {
+    // If the columns in the group are not the same as in the tree this may
+    // return invalid data.  So don't so that.
+    var node = this.root;
+    for (let j=0; j < group.length; j++) {
+      let column = group[j];
+      let next = node.get(column);
+      if (typeof next == 'undefined') return undefined;
+      node = next;
+    }
+    return node;
   }
 
   // Used by group-by to call a series of reduce functions on a row of data
@@ -355,22 +434,44 @@
     }
   }
 
-  Oj.PivotTable.prototype.dimension = function(rows, columns) {
-    this.row_dimension = rows;
-    this.column_dimension = columns;
-    let crosstab = rows.concat(columns);
-    // build a summary dataframe to use for cell values
+  // Build an n-dimensional summary (a kind of cube) of the data.
+  // Dimensions is an arrar of arrays.  Each array is a list of fields
+  // that belong to the same dimension
+  Oj.PivotTable.prototype.dimension = function(dimensions) {
+    this.dimensions = dimensions;
+    let crosstab = [];
+    for (let d=0; d < dimensions.length; d++) {
+      crosstab = crosstab.concat(dimensions[d]);
+    }
     this.summary = this.aggregate(crosstab, this.expression);
-    this.transposed_columns = new order();
+    this.summary.reorder('pivot-order', crosstab);
+    // create a margin (a summary) for every dimension ;
+    this.margins = [];
     let group = Object.create(null);
-    // builds the column dimension (header) structure
-    for (let i=0; i < this.length ; i++) {
-      for(let j=0; j < columns.length; j++) {
-        group[columns[j]] = this.data[columns[j]][i];
-      }
-      this.transposed_columns.insert(group, i, true);
+    for (let d=0; d < dimensions.length; d++) {
+      this.margins[d] = this.aggregate(dimensions[d], this.expression);
+      this.margins[d].reorder('pivot-order', dimensions[d]);
     }
     return this;
+  }
+
+  Oj.PivotTable.prototype.traverse = function(callback) {
+    var pivot = this;
+    let traverse = function(margin, crossing) {
+      pivot.sort(pivot.margins[margin].indices['pivot-order'].root,
+        (group, key, value) => {
+          let g = crossing.concat(group);
+          let v = pivot.summary.indices['pivot-order'].find(g) || null;
+          callback(g, group[group.length - 1], v);
+          if (value[Symbol.toStringTag] != 'Map') {
+            if (margin < pivot.dimensions.length - 1) {
+              traverse(margin + 1, g);
+            }
+          }
+        }
+      );
+    }
+    traverse(0, []);
   }
 
 } (this));
