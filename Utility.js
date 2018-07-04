@@ -17,7 +17,7 @@
     var div = Oj.getElementById(id);
     var table = div.push('table');
     var row;
-    let row_nest_option = true; // todo row nesting ;
+    let row_nest_option = true;
     // add a header to the table ;
     let head = table.push('thead');
     let hrows = [];
@@ -26,27 +26,44 @@
       hrows[j].push('th', {colspan: this.dimensions[0].length});
     }
     this.breadth(this.margins[1].indices['pivot-order'].root,
-      (group, key, value) => {
+      (group, key, value, leaves) => {
         if (value[Symbol.toStringTag] != 'Map') {
           hrows[group.length-1].push('th', '', key.toString());
         } else {
-          hrows[group.length-1].push('th', {colspan: value.size}, key.toString());
+          hrows[group.length-1].push('th', {colspan: leaves}, key.toString());
         }
       }
     );
     // add the table body ;
     let body = table.push('tbody');
-    this.traverse((group, key, value) => {
-        if (group.length == this.dimensions[0].length) {
-          row = body.push('tr');
-          for (let j=0; j < group.length; j++) {
-            row.push('th', '', group[j]);
+    let h = [];
+    this.traverse(
+      (group, key, value, leaves, order) => {
+        // row headings
+        if (row_nest_option === true) {
+          if (group.length < this.dimensions[0].length) {
+            h.push(Oj.createElement('th', {rowspan: leaves }, key.toString()))
+          }
+          if (group.length === this.dimensions[0].length) {
+            row = body.push('tr');
+            for (let i=0; i < h.length; i++) {
+              row.appendChild(h[i]);
+            }
+            row.push('th', '', key.toString());
+            h = [];
           }
         } else {
-          if (value[Symbol.toStringTag] != 'Map') {
-            for (let j=0; j < this.summary.columns.length; j++) {
-              row.push('td', '', this.summary.data[this.summary.columns[j]][value].toString());
+          if (group.length == this.dimensions[0].length) {
+            row = body.push('tr');
+            for (let j=0; j < group.length; j++) {
+              row.push('th', '', group[j]);
             }
+          }
+        }
+        // table interior
+        if (value[Symbol.toStringTag] != 'Map') {
+          for (let j=0; j < this.summary.columns.length; j++) {
+            row.push('td', '', this.summary.data[this.summary.columns[j]][value].toString());
           }
         }
       }
@@ -89,6 +106,7 @@
     else return null;
   }
 
+  // todo: re-write this to extend element rather than wrap it
   // push a new element onto a chain; allows method chaining
   Oj.Chain.prototype.push = function(name, attributes, text) {
     // handles arrays by allowing a map-like pushing of identical elements
@@ -115,6 +133,18 @@
       if(typeof text !== 'undefined' && typeof text.nodeType !== 'undefined' && text.nodeType === 1 ) c.appendChild(text);
       return new Oj.Chain(e);
     }
+  }
+
+  Oj.createElement = function(name, attributes, text) {
+    var e  = document.createElement(name);
+    if(typeof attributes === 'object') for (a in attributes) e.setAttribute(a, attributes[a]);
+    if(typeof text === 'string' && text !== '') e.appendChild(document.createTextNode(text));
+    return e;
+  }
+
+  Oj.Chain.prototype.appendChild = function(element) {
+    var e = this.e.appendChild(element);
+    return new Oj.Chain(e);
   }
 
   Oj.Chain.prototype.clear = function () {

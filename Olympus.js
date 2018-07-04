@@ -147,12 +147,13 @@
     if (typeof group == 'undefined') var group = [];
     for (const [key, value] of node) {
       let g = group.concat([key]);
-      callback(g, key, value);
+      callback(g, key, value, value.leaves);
     }
     for (const [key, value] of node) {
       let g = group.concat([key]);
       if (value[Symbol.toStringTag] == 'Map') {
-        this.walk(value, callback, g);
+        //this.walk(value, callback, g);
+        this.breadth(value, callback, g);
       }
     }
   }
@@ -169,9 +170,11 @@
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
       let v = node.get(keys[k]);
-      callback(g, keys[k], v);
+      //callback(g, keys[k], v);
+      callback(g, keys[k], v, v.leaves, k);
       if (v[Symbol.toStringTag] == 'Map') {
-        this.walk(v, callback, g);
+        //this.walk(v, callback, g);
+        this.sort(v, callback, g);
       }
     }
   }
@@ -365,6 +368,7 @@
   }
 
   // same as tree insert, but columns aren't ordered
+  // todo: re-write as a recursive function so leaf count can be maintained
   order.prototype.insert = function(group, index, nodupes) {
     //this.columns = Object.keys(group);
     var node = this.root;
@@ -437,6 +441,7 @@
   // Build an n-dimensional summary (a kind of cube) of the data.
   // Dimensions is an arrar of arrays.  Each array is a list of fields
   // that belong to the same dimension
+  // Todo: add sub-dimensions
   Oj.PivotTable.prototype.dimension = function(dimensions) {
     this.dimensions = dimensions;
     let crosstab = [];
@@ -451,6 +456,7 @@
     for (let d=0; d < dimensions.length; d++) {
       this.margins[d] = this.aggregate(dimensions[d], this.expression);
       this.margins[d].reorder('pivot-order', dimensions[d]);
+      this.leaf(this.margins[d].indices['pivot-order'].root);
     }
     return this;
   }
@@ -459,10 +465,10 @@
     var pivot = this;
     let traverse = function(margin, crossing) {
       pivot.sort(pivot.margins[margin].indices['pivot-order'].root,
-        (group, key, value) => {
+        (group, key, value, leaves, order) => {
           let g = crossing.concat(group);
           let v = pivot.summary.indices['pivot-order'].find(g) || null;
-          callback(g, group[group.length - 1], v);
+          callback(g, group[group.length - 1], v, leaves, order);
           if (value[Symbol.toStringTag] != 'Map') {
             if (margin < pivot.dimensions.length - 1) {
               traverse(margin + 1, g);
@@ -472,6 +478,20 @@
       );
     }
     traverse(0, []);
+  }
+
+  // Add a leaf count to a margin
+  Oj.PivotTable.prototype.leaf = function(node) {
+    var l = 0;
+    for (const [key, value] of node) {
+      if (value[Symbol.toStringTag] == 'Map') {
+        l += this.leaf(value);
+      } else {
+        l++
+      }
+    }
+    node.leaves = l;
+    return l;
   }
 
 } (this));
