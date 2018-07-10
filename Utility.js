@@ -82,9 +82,11 @@
           }
         }
         // table interior
+        // todo: support multiple columns
+        // todo: number formatting options
         if (value[Symbol.toStringTag] != 'Map') {
           for (let j=0; j < this.summary.columns.length; j++) {
-            row.push('td', '', this.summary.data[this.summary.columns[j]][value].toString());
+            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]));
           }
         }
       }
@@ -103,6 +105,12 @@
       return (results || 0) + 1
     };
     return count;
+  }
+
+  // https://stackoverflow.com/questions/149055/
+  // todo: use Intl.NumberFormat
+  Oj.format = function(number, places, currency) {
+    return (currency || '') + number.toFixed(places || 0).replace(/(\d)(?=(\d{3})+(?:\.\d+)?$)/g, "$1,");
   }
 
   // link an element or list of elements into a method chain

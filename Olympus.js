@@ -479,6 +479,9 @@
     return this;
   }
 
+  // Traverses a dimensioned pivot table.  Used by the callback to write to HTML
+  // (etc).  Callback is called with four arguments, (group, key, value, leaves,
+  // , order).  Todo: is order really neccessary?
   Oj.PivotTable.prototype.traverse = function(callback) {
     var pivot = this;
     let traverse = function(margin, crossing) {
@@ -499,6 +502,7 @@
   }
 
   // Add a leaf count to a margin
+  // Todo: explore adding this to the margin creation process.
   Oj.PivotTable.prototype.leaf = function(node) {
     var l = 0;
     for (const [key, value] of node) {
