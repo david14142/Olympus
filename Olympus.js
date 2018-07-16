@@ -26,15 +26,54 @@
 
   // DataFrame constructor
   Oj.DataFrame = function(data) {
-    data = data || Object.create(null);
-    this.columns = Object.keys(data);
+
+    // empty constructor
+    if (typeof data == 'undefined') {
+      this.data = Object.create(null)
+    // ** type 1 : data is an array of arrays.  Each inner array is a row
+    } else if (typeof data == 'object' && Array.isArray(data)) {
+      this.data = Object.create(null);
+      // assume that the first row is column names - copy them
+      let header = data[0];
+      for(let j=0; j < header.length; j++) {
+        this.data[header[j]] = [];
+      }
+      // now copy the data (starting from the second row)
+      for(let i=1; i < data.length; i++) {
+        let row = data[i];
+        for (let j=0; j < row.length; j++) {
+          this.data[header[j]].push(row[j]);
+        }
+      }
+
+    // ** type 2: data is a collection of arrays.  Each array is a column
+    } else if (typeof data == 'object') {
+        this.data = data ;
+    }
+
+    this.columns = Object.keys(this.data);
     this.indices = {};
-    this.data = data;
+    this.length = 0;
+    var deleted = [];
+
     if (this.columns.length > 0) {
       let longest = this.columns.reduce((r, d) => this.data[r].length > this.data[d].length ? r : d, this.columns[0]);
       this.length = this.data[longest].length;
-    } else {
-      this.length = 0;
+    }
+
+    this.delete = function(row) {
+      for (let j=0; j < this.columns.length; j++) {
+        // need to delete from any indexes that refer to this row
+        this.data[this.columns[j]][row] = undefined;
+      }
+      deleted[row] = true;
+      // todo: remove from indexes?;
+    }
+
+    this[Symbol.iterator] = function*() {
+      for(let i = 0; i < this.length; i++) {
+        if (deleted[i] !== true) yield i;
+      }
     }
   }
 
@@ -59,9 +98,21 @@
         this.columns.push(column);
         this.data[column]=[];
       }
-      this.data[column][this.length] = row[column];
+      this.data[column].push(row[column]);
     }
     this.length++;
+  }
+
+  Oj.DataFrame.prototype.forEach = function(callback) {
+    var row;
+    for(let i of this) {
+      row =  Object.create(null);
+      for (let j=0; j < this.columns.length; j++) {
+        let column = this.columns[j];
+        row[column] = this.data[column][i];
+      }
+      callback(row, i);
+    }
   }
 
   // insert() replaces a row of data.  Additional columns are added as needed.
@@ -81,10 +132,10 @@
   Oj.DataFrame.prototype.map = function(callback, append) {
     var row;
     var dataset = new Oj.DataFrame();
-    for(let i=0; i < this.length ; i++) {
+    for(let i of this) {
       row =  Object.create(null);
       for (let j=0; j < this.columns.length; j++) {
-        let column = this.columns[j];
+        let column = this.columns[j]
         row[column] = this.data[column][i];
       }
       dataset.push(callback(row, i));
@@ -104,7 +155,7 @@
     var result = new Oj.DataFrame();
     result.indices.primary = new Oj.tree();
     var row = Object.create(null);
-    for(let i=0; i < this.length ; i++) {
+    for(let i of this) {
       for (let j=0; j < this.columns.length; j++) {
         let column = this.columns[j];
         row[column] = this.data[column][i];
@@ -202,7 +253,7 @@
     let rv = true;
     if (typeof unique == 'undefined') unique = false;
     let group = Object.create(null);
-    for (let i=0; i < this.length ; i++) {
+    for (let i of this) {
       for(let j=0; j < columns.length; j++) {
         group[columns[j]] = this.data[columns[j]][i];
       }
@@ -217,7 +268,7 @@
     this.indices[name] = new order(columns);
     let rv = true;
     let group = Object.create(null);
-    for (let i=0; i < this.length ; i++) {
+    for (let i of this) {
       for(let j=0; j < columns.length; j++) {
         group[columns[j]] = this.data[columns[j]][i];
       }
@@ -287,7 +338,7 @@
     result.indices.primary = new tree();
     var row = Object.create(null);
     var group = Object.create(null);
-    for(let i=0; i < this.length ; i++) {
+    for(let i of this) {
       for (let j=0; j < this.columns.length; j++) {
         let column = this.columns[j];
         row[column] = this.data[column][i];
@@ -306,6 +357,24 @@
       }
     }
     return result;
+  }
+
+  Oj.DataFrame.prototype.where = function(test) {
+    var row;
+    for (let i of this) {
+      row =  Object.create(null);
+      for (let j=0; j < this.columns.length; j++) {
+        let column = this.columns[j];
+        row[column] = this.data[column][i];
+      }
+      if (test(row, i) === false) {
+        this.delete(i);
+        // for (let j=0; j < this.columns.length; j++) {
+        //   // need to delete from any indexs that refer to this row
+        //   this.data[this.columns[j]][i] = undefined;
+        // }
+      }
+    }
   }
 
   // forms the basis of indexes for dataframes
@@ -447,7 +516,11 @@
   Oj.PivotTable = class extends Oj.DataFrame {
     constructor (data, expression, dimensions) {
       super(data);
-      if (typeof expression == 'object') this.expression = expression;
+      if (typeof expression == 'object') {
+        this.expression = expression;
+      } else {
+        throw 'PivotTable: Invalid or missing expression.';
+      }
       if (typeof dimensions == 'object'
           && typeof dimensions.rows != 'undefined'
           && typeof dimensions.columns != 'undefined')  {

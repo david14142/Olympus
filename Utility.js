@@ -28,24 +28,39 @@
   Oj.DataFrame.prototype.print = function(rows) {
     if (typeof rows == 'undefined' || rows === 0) rows = this.length;
     console.log(this.columns.join('\t'));
-    for(let i=0; i < rows ; i++) {
+    for(let i of this) {
       console.log(this.getRow(i).join('\t'));
     }
   }
 
   // produce a cross tabulation from a 2-d summary of data
   Oj.PivotTable.prototype.table = function(id) {
+    if (typeof id == 'undefined') {
+      throw 'table: Anchor element not specified.';
+    }
     var div = Oj.getElementById(id);
     var table = div.push('table');
     var row;
+    // todo: make the options optional
     let row_nest_option = true;
+    let row_header_option = true;
+    let col_header_option = true;
     // add a header to the table ;
     let head = table.push('thead');
     let hrows = [];
+    let leaf_total = 0;
     for (let j=0; j < this.dimensions[1].length; j++) {
-      hrows[j] = head.push('tr');
-      hrows[j].push('th', {colspan: this.dimensions[0].length});
+      hrows[j] = new Oj.Chain(Oj.create('tr'));
+      if (row_header_option && j == this.dimensions[1].length -1) {
+        for (let i=0; i < this.dimensions[0].length; i++) {
+          // row headers
+          hrows[j].push('th', '', this.dimensions[0][i]);
+        }
+      } else {
+        hrows[j].push('th', {colspan: this.dimensions[0].length});
+      }
     }
+    // column names
     this.breadth(this.margins[1].indices['pivot-order'].root,
       (group, key, value, leaves) => {
         if (value[Symbol.toStringTag] != 'Map') {
@@ -53,8 +68,22 @@
         } else {
           hrows[group.length-1].push('th', {colspan: leaves}, key.toString());
         }
+        if (group.length == 1) { leaf_total += ( leaves || 1 ) }
       }
     );
+    // column headers
+    let ch = head.push('tr')
+      ch.push('th', {colspan: this.dimensions[0].length})
+      ch.push('th', {colspan: leaf_total}, this.dimensions[1][0]);
+    for (let j=0; j < this.dimensions[1].length - 1; j++) {
+      let ch = head.push('tr')
+        ch.push('th', {colspan: this.dimensions[0].length})
+        ch.push('th', {colspan: leaf_total }, this.dimensions[1][j]);
+    }
+    for (let j=0; j < this.dimensions[1].length; j++) {
+      head.link(hrows[j]);
+    }
+
     // add the table body ;
     let body = table.push('tbody');
     let h = [];
@@ -63,12 +92,12 @@
         // row headings
         if (row_nest_option === true) {
           if (group.length < this.dimensions[0].length) {
-            h.push(Oj.createElement('th', {rowspan: leaves }, key.toString()))
+            h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
           }
           if (group.length === this.dimensions[0].length) {
             row = body.push('tr');
             for (let i=0; i < h.length; i++) {
-              row.appendChild(h[i]);
+              row.append(h[i]);
             }
             row.push('th', '', key.toString());
             h = [];
@@ -84,9 +113,11 @@
         // table interior
         // todo: support multiple columns
         // todo: number formatting options
-        if (value[Symbol.toStringTag] != 'Map') {
+        if (value === null) {
+          row.push('td', '', 'null');
+        } else if (value[Symbol.toStringTag] != 'Map') {
           for (let j=0; j < this.summary.columns.length; j++) {
-            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]));
+            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]))
           }
         }
       }
@@ -159,19 +190,24 @@
       var e = this.e.appendChild(document.createElement(name));
       if(typeof attributes === 'object') for (a in attributes) e.setAttribute(a, attributes[a]);
       if(typeof text === 'string' && text !== '') e.appendChild(document.createTextNode(text));
-      if(typeof text !== 'undefined' && typeof text.nodeType !== 'undefined' && text.nodeType === 1 ) c.appendChild(text);
+      if(typeof text !== 'undefined' && typeof text.nodeType !== 'undefined' && text.nodeType === 1 ) e.appendChild(text);
       return new Oj.Chain(e);
     }
   }
 
-  Oj.createElement = function(name, attributes, text) {
+  Oj.Chain.prototype.link = function(chain) {
+    this.e.appendChild(chain.e);
+    return chain;
+  }
+
+  Oj.create = function(name, attributes, text) {
     var e  = document.createElement(name);
     if(typeof attributes === 'object') for (a in attributes) e.setAttribute(a, attributes[a]);
     if(typeof text === 'string' && text !== '') e.appendChild(document.createTextNode(text));
     return e;
   }
 
-  Oj.Chain.prototype.appendChild = function(element) {
+  Oj.Chain.prototype.append = function(element) {
     var e = this.e.appendChild(element);
     return new Oj.Chain(e);
   }
