@@ -52,27 +52,42 @@
     }
 
     this.columns = Object.keys(this.data);
-    this.indices = {};
+    this.indices = Object.create(null);
     this.length = 0;
-    var deleted = [];
+    this.deleted = [];
 
     if (this.columns.length > 0) {
       let longest = this.columns.reduce((r, d) => this.data[r].length > this.data[d].length ? r : d, this.columns[0]);
       this.length = this.data[longest].length;
     }
 
-    this.delete = function(row) {
-      for (let j=0; j < this.columns.length; j++) {
-        // need to delete from any indexes that refer to this row
-        this.data[this.columns[j]][row] = undefined;
-      }
-      deleted[row] = true;
-      // todo: remove from indexes?;
-    }
-
     this[Symbol.iterator] = function*() {
       for(let i = 0; i < this.length; i++) {
-        if (deleted[i] !== true) yield i;
+        if (this.deleted[i] !== true) yield i;
+      }
+    }
+  }
+
+  Oj.DataFrame.prototype.delete = function(row) {
+    // for (let j=0; j < this.columns.length; j++) {
+    //   // need to delete from any indexes that refer to this row
+    //   this.data[this.columns[j]][row] = undefined;
+    // }
+    this.deleted[row] = true;
+    // todo: remove from indexes?;
+    for (index in this.indices) {
+      if (index.type === 'order') {
+        let group = [];
+        for(j = 0; j < index.columns.length; j++) {
+          group.push(this.data[this.columns[j]][row]);
+        }
+        index.delete(group, row);
+      } else if (index.type === 'tree') {
+        let group = Object.create(null);
+        for (j of index.columns) {
+          group[index.columns[j]] = this.data[index.columns[j]][row];
+        }
+        index.delete(group, row);
       }
     }
   }
@@ -184,7 +199,7 @@
       if (typeof i == 'number') {
         row[column] = this.data[column][i];
       }
-      // need to handle i being an array ;
+      // todo: need to handle i being an array ;
     }
     return row;
   }
@@ -239,10 +254,8 @@
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
       let v = node.get(keys[k]);
-      //callback(g, keys[k], v);
       callback(g, keys[k], v, v.leaves, k);
       if (v[Symbol.toStringTag] == 'Map') {
-        //this.walk(v, callback, g);
         this.sort(v, callback, g);
       }
     }
@@ -367,12 +380,8 @@
         let column = this.columns[j];
         row[column] = this.data[column][i];
       }
-      if (test(row, i) === false) {
+      if (test(row, i) !== true) {
         this.delete(i);
-        // for (let j=0; j < this.columns.length; j++) {
-        //   // need to delete from any indexs that refer to this row
-        //   this.data[this.columns[j]][i] = undefined;
-        // }
       }
     }
   }
@@ -380,6 +389,7 @@
   // forms the basis of indexes for dataframes
   let tree = function() {
     this.root = new Map();
+    this.type = 'tree';
   }
 
   // checks for the location of a group, or adds a new one,
@@ -448,10 +458,23 @@
     }
   }
 
+  tree.prototype.delete = function(group, index) {
+    var keys = Object.keys(group).sort();
+    let columns = [];
+    for (j of keys) {
+      columns.push(group[keys[j]]);
+    }
+    let children = remove(this.root, columns, index);
+    if (children === 0) {
+      this.root.delete(key);
+    }
+  }
+
   // ordered indexes - used for sorting et al.
   let order = function(columns) {
     this.root = new Map();
     this.columns = columns;
+    this.type = 'order';
   }
 
   // same as tree insert, but columns aren't ordered
@@ -498,6 +521,27 @@
       node = next;
     }
     return node;
+  }
+
+  order.prototype.delete = function(group, index) {
+    let children = remove(this.root, group, index)
+    if (children === 0) {
+      this.root.delete(key);
+    }
+  }
+
+  let remove = function(node, group, index) {
+    let value = node.get(group[1]);
+    if (value[Symbol.toStringTag] == 'Map') {
+      let children = remove(value, group.slice(1), index);
+      if (children === 0) node.delete(group[1]);
+    } else if (typeof value == 'number') {
+      node.delete(group[1]);
+      return 0;
+    } else if (typeof value == 'object' && Array.isArray(value)) {
+      let remaining = value.filter(v => v != index);
+      return remaining.length;
+    }
   }
 
   // Used by group-by to call a series of reduce functions on a row of data
