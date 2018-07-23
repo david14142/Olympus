@@ -34,24 +34,34 @@
   }
 
   // produce a cross tabulation from a 2-d summary of data
-  Oj.PivotTable.prototype.table = function(id) {
-    if (typeof id == 'undefined') {
+  Oj.PivotTable.prototype.table = function(options) {
+    let defaults = {
+      nest_rows: true,
+      row_headers: true,
+      column_headers: true,
+      row_totals: true,
+      column_totals: true
+    };
+    for (let o in defaults) {
+      if (typeof options[o] == 'undefined') options[o] = defaults[o];
+    }
+
+    if (typeof options.id == 'undefined') {
       throw 'table: Anchor element not specified.';
     }
-    var div = Oj.getElementById(id);
+    var div = Oj.getElementById(options.id);
     var table = div.push('table');
     var row;
-    // todo: make the options optional
-    let row_nest_option = true;
-    let row_header_option = true;
-    let col_header_option = true;
+
     // add a header to the table ;
     let head = table.push('thead');
     let hrows = [];
+    let hnames = [];
     let leaf_total = 0;
+
     for (let j=0; j < this.dimensions[1].length; j++) {
       hrows[j] = new Oj.Chain(Oj.create('tr'));
-      if (row_header_option && j == this.dimensions[1].length -1) {
+      if (options.row_headers && j == this.dimensions[1].length -1) {
         for (let i=0; i < this.dimensions[0].length; i++) {
           // row headers
           hrows[j].push('th', '', this.dimensions[0][i]);
@@ -60,6 +70,7 @@
         hrows[j].push('th', {colspan: this.dimensions[0].length});
       }
     }
+
     // column names
     this.breadth(this.margins[1].indices['pivot-order'].root,
       (group, key, value, leaves) => {
@@ -71,16 +82,22 @@
         if (group.length == 1) { leaf_total += ( leaves || 1 ) }
       }
     );
+
     // column headers
-    let ch = head.push('tr')
-      ch.push('th', {colspan: this.dimensions[0].length})
-      ch.push('th', {colspan: leaf_total}, this.dimensions[1][0]);
-    for (let j=0; j < this.dimensions[1].length - 1; j++) {
-      let ch = head.push('tr')
-        ch.push('th', {colspan: this.dimensions[0].length})
-        ch.push('th', {colspan: leaf_total }, this.dimensions[1][j]);
+    if (options.column_headers) {
+      for (let j=0; j < this.dimensions[1].length ; j++) {
+        hnames[j] = new Oj.Chain(Oj.create('tr'));
+          hnames[j].push('th', {colspan: this.dimensions[0].length})
+          hnames[j].push('th', {colspan: leaf_total }, this.dimensions[1][j]);
+          if (options.row_totals && j===0) {
+            hnames[j].push('th', {rowspan: this.dimensions[1].length * 2}, 'Total');
+          }
+      }
     }
+
+    // link in the header structure
     for (let j=0; j < this.dimensions[1].length; j++) {
+      if (options.column_headers) head.link(hnames[j]);
       head.link(hrows[j]);
     }
 
@@ -90,7 +107,7 @@
     this.traverse(
       (group, key, value, leaves, order) => {
         // row headings
-        if (row_nest_option === true) {
+        if (options.nest_rows) {
           if (group.length < this.dimensions[0].length) {
             h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
           }
@@ -106,7 +123,7 @@
           if (group.length == this.dimensions[0].length) {
             row = body.push('tr');
             for (let j=0; j < group.length; j++) {
-              row.push('th', '', group[j]);
+              row.push('th', '', group[j].toString());
             }
           }
         }
@@ -114,14 +131,46 @@
         // todo: support multiple columns
         // todo: number formatting options
         if (value === null) {
-          row.push('td', '', 'null');
+          row.push('td', '', '');
         } else if (value[Symbol.toStringTag] != 'Map') {
           for (let j=0; j < this.summary.columns.length; j++) {
-            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]))
+            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]));
+          }
+        }
+      },
+      // table body final function (row totals)
+      (group, key, value, leaves, order) => {
+        if (options.row_totals && group.length == this.dimensions[0].length) {
+          let total = this.margins[0].find(group);
+          for (e in total) {
+            row.push('td', '', Oj.format(total[e]));
           }
         }
       }
     );
+
+    // column totals
+    let t = body.push('tr');
+    t.push('th', {colspan: this.dimensions[0].length}, 'Total');
+    this.sort(this.margins[1].indices['pivot-order'].root,
+      (group, key, value) => {
+        //console.log(group);
+        if (group.length === this.dimensions[1].length) {
+          let i = this.margins[1].indices['pivot-order'].find(group);
+          //console.log(total);
+          for (e in this.margins[1].data) {
+            t.push('td', '', Oj.format(this.margins[1].data[e][i] ));
+          }
+        }
+      }
+    );
+
+    // grand total
+    if (options.row_totals && options.column_totals) {
+      for (e in this.total) {
+        t.push('td', '', Oj.format(this.total[e]));
+      }
+    }
   }
 
   Oj.sum = function(column) {
@@ -136,6 +185,11 @@
       return (results || 0) + 1
     };
     return count;
+  }
+
+  Oj.log = function(string) {
+    let n = new Date();
+    console.log(n + '> ' + string )
   }
 
   // https://stackoverflow.com/questions/149055/

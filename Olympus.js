@@ -144,7 +144,7 @@
     }
   }
 
-  Oj.DataFrame.prototype.map = function(callback, append) {
+  Oj.DataFrame.prototype.map = function(callback, frame) {
     var row;
     var dataset = new Oj.DataFrame();
     for(let i of this) {
@@ -155,36 +155,29 @@
       }
       dataset.push(callback(row, i));
     }
-    if (typeof append == 'undefined' || append === true) {
-      this.append(dataset);
-      return this;
-    } else {
+    Oj.log('Mapped');
+    if (typeof frame == 'undefined') {
       return dataset;
+    } else {
+      frame.append(dataset);
+      return frame;
     }
   }
 
-  // reduce() differs from fold in that the callback function takes the result
-  // datafrane as its accumulator, and returns a key/value pair.  It is more
+  // reduce() differs from aggregate in that the callback function takes the result
+  // dataframe as its accumulator, and returns a key/value pair.  It is more
   // flexible but more difficult to use than the aggregate function.
-  Oj.DataFrame.prototype.reduce = function(callback) {
-    var result = new Oj.DataFrame();
-    result.indices.primary = new Oj.tree();
+  Oj.DataFrame.prototype.reduce = function(expression) {
+    var result = Object.create(null);
     var row = Object.create(null);
     for(let i of this) {
       for (let j=0; j < this.columns.length; j++) {
         let column = this.columns[j];
         row[column] = this.data[column][i];
       }
-      let reduced = callback(result, row);
-      // Add the result as part of the frame data if the key already exists
-      // returns index, otherwise inserts new key
-      let index = result.indices.primary.add(reduced.key, result.length);
-      if (index !== result.length) {
-        result.insert(reduced.values, index);
-      } else {
-        result.push(reduced.values);
-      }
+      result = aggregate(expression)(result, row);
     }
+    Oj.log('Reduced');
     return result;
   }
 
@@ -250,7 +243,13 @@
     for (const k of node.keys()) {
       keys.push(k);
     }
-    keys.sort();
+    keys.sort((a,b) => {
+      if (Number.isNaN(a - b)) {
+        if (a < b) return -1;
+        else if (a > b) return 1;
+        else if (a === b) return 0;
+      } else return a-b;
+    });
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
       let v = node.get(keys[k]);
@@ -369,6 +368,7 @@
         result.push(item);
       }
     }
+    Oj.log('Aggregated');
     return result;
   }
 
@@ -573,6 +573,27 @@
     }
   }
 
+  // Overrides DataFrame.map()
+  Oj.PivotTable.prototype.map = function(callback, frame) {
+    var row;
+    var dataset = new Oj.PivotTable(Object.create(null), this.expression, this.dimensions);
+    for(let i of this) {
+      row =  Object.create(null);
+      for (let j=0; j < this.columns.length; j++) {
+        let column = this.columns[j]
+        row[column] = this.data[column][i];
+      }
+      dataset.push(callback(row, i));
+    }
+    Oj.log('Mapped');
+    if (typeof frame == 'undefined') {
+      return dataset;
+    } else {
+      frame.append(dataset);
+      return frame;
+    }
+  }
+
   // Build an n-dimensional summary (a kind of cube) of the data.
   // Dimensions is an arrar of arrays.  Each array is a list of fields
   // that belong to the same dimension
@@ -593,13 +614,14 @@
       this.margins[d].reorder('pivot-order', dimensions[d]);
       this.leaf(this.margins[d].indices['pivot-order'].root);
     }
+    this.total = this.reduce(this.expression);
     return this;
   }
 
   // Traverses a dimensioned pivot table.  Used by the callback to write to HTML
   // (etc).  Callback is called with four arguments, (group, key, value, leaves,
   // , order).  Todo: is order really neccessary?
-  Oj.PivotTable.prototype.traverse = function(callback) {
+  Oj.PivotTable.prototype.traverse = function(callback, final, init) {
     var pivot = this;
     let traverse = function(margin, crossing) {
       pivot.sort(pivot.margins[margin].indices['pivot-order'].root,
@@ -611,6 +633,9 @@
             if (margin < pivot.dimensions.length - 1) {
               traverse(margin + 1, g);
             }
+          }
+          if (typeof final != 'undefined') {
+            final(g, group[group.length - 1], v, leaves, order);
           }
         }
       );
