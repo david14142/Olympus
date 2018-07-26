@@ -55,6 +55,7 @@
     this.indices = Object.create(null);
     this.length = 0;
     this.deleted = [];
+    this.isDataFrame = true;
 
     if (this.columns.length > 0) {
       let longest = this.columns.reduce((r, d) => this.data[r].length > this.data[d].length ? r : d, this.columns[0]);
@@ -153,7 +154,8 @@
         let column = this.columns[j]
         row[column] = this.data[column][i];
       }
-      dataset.push(callback(row, i));
+      let result = callback(row, i);
+      if (result !== null) dataset.push(result);
     }
     Oj.log('Mapped');
     if (typeof frame == 'undefined') {
@@ -573,6 +575,10 @@
     }
   }
 
+  Oj.pivot = function(frame, expression, dimensions) {
+    return new Oj.PivotTable(frame.data, expression, dimensions);
+  }
+
   // Overrides DataFrame.map()
   Oj.PivotTable.prototype.map = function(callback, frame) {
     var row;
@@ -583,7 +589,8 @@
         let column = this.columns[j]
         row[column] = this.data[column][i];
       }
-      dataset.push(callback(row, i));
+      let result = callback(row, i);
+      if (result !== null) dataset.push(result);
     }
     Oj.log('Mapped');
     if (typeof frame == 'undefined') {
