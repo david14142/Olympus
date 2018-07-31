@@ -665,6 +665,15 @@
     return l;
   }
 
+  // apply a callback to the summary and margins (not the raw data)
+  // of a pivot table.  Useful for averages & other ratios
+  Oj.PivotTable.prototype.ratio = function(callback) {
+    this.summary.map(callback, this.summary);
+    for(let k=0; k < this.margins.length; k++) {
+      this.margins[k].map(callback, this.margins[k]);
+    }
+  }
+
 } (this));
 
 var Oj = Oj || this.Oj ;

@@ -40,16 +40,27 @@
       row_headers: true,
       column_headers: true,
       row_totals: true,
-      column_totals: true
+      column_totals: true,
+      item_names: false,
+      columns: this.summary.columns,
+      formats: Object.create(null)
     };
+
     for (let o in defaults) {
       if (typeof options[o] == 'undefined') options[o] = defaults[o];
+    }
+
+    for (let j=0; j < options.columns.length; j++) {
+      if (typeof options.formats[options.columns[j]] == 'undefined') {
+        options.formats[options.columns[j]] = Oj.format();
+      }
     }
 
     if (typeof options.id == 'undefined') {
       throw 'table: Anchor element not specified.';
     }
     var div = Oj.getElementById(options.id);
+    div.e.innerHTML='';
     var table = div.push('table');
     var row;
 
@@ -71,19 +82,23 @@
       }
     }
 
-    // column names
+    // column names - variable column values
     this.breadth(this.margins[1].indices['pivot-order'].root,
       (group, key, value, leaves) => {
         if (value[Symbol.toStringTag] != 'Map') {
-          hrows[group.length-1].push('th', '', key.toString());
+          if (options.columns.length > 1) {
+            hrows[group.length-1].push('th', {colspan: options.columns.length}, key.toString());
+          } else {
+            hrows[group.length-1].push('th', '', key.toString());
+          }
         } else {
-          hrows[group.length-1].push('th', {colspan: leaves}, key.toString());
+          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, key.toString());
         }
         if (group.length == 1) { leaf_total += ( leaves || 1 ) }
       }
     );
 
-    // column headers
+    // column headers - variable names
     if (options.column_headers) {
       for (let j=0; j < this.dimensions[1].length ; j++) {
         hnames[j] = new Oj.Chain(Oj.create('tr'));
@@ -95,10 +110,22 @@
       }
     }
 
+    // add item item names
+    if (options.item_names) {
+      hrows.push(new Oj.Chain(Oj.create('tr')));
+      for (let j=0; j < options.columns.length; j++) {
+        hrows[hrows.length-1].push('th', {colspan: this.dimensions[0].length})
+        hrows[hrows.length-1].push('th', {colspan: leaf_total }, options.columns[j]);
+      }
+    }
+
     // link in the header structure
     for (let j=0; j < this.dimensions[1].length; j++) {
       if (options.column_headers) head.link(hnames[j]);
       head.link(hrows[j]);
+      if (options.item_names) {
+        head.link(hrows[j+1]);
+      }
     }
 
     // add the table body ;
@@ -133,8 +160,9 @@
         if (value === null) {
           row.push('td', '', '');
         } else if (value[Symbol.toStringTag] != 'Map') {
-          for (let j=0; j < this.summary.columns.length; j++) {
-            row.push('td', '', Oj.format(this.summary.data[this.summary.columns[j]][value]));
+          for (let j=0; j < options.columns.length; j++) {
+            let name = options.columns[j];
+            row.push('td', '', options.formats[name](this.summary.data[name][value]));
           }
         }
       },
@@ -143,7 +171,8 @@
         if (options.row_totals && group.length == this.dimensions[0].length) {
           let total = this.margins[0].find(group);
           for (e in total) {
-            row.push('td', '', Oj.format(total[e]));
+            name = options.columns[e];
+            row.push('td', '', options.formats[name](total[name]));
           }
         }
       }
@@ -158,8 +187,9 @@
         if (group.length === this.dimensions[1].length) {
           let i = this.margins[1].indices['pivot-order'].find(group);
           //console.log(total);
-          for (e in this.margins[1].data) {
-            t.push('td', '', Oj.format(this.margins[1].data[e][i] ));
+          for (e in options.columns) {
+            name = options.columns[e];
+            t.push('td', '', options.formats[name](this.margins[1].data[name][i] ));
           }
         }
       }
@@ -168,7 +198,7 @@
     // grand total
     if (options.row_totals && options.column_totals) {
       for (e in this.total) {
-        t.push('td', '', Oj.format(this.total[e]));
+        t.push('td', '', options.formats[e](this.total[e]));
       }
     }
   }
@@ -194,8 +224,11 @@
 
   // https://stackoverflow.com/questions/149055/
   // todo: use Intl.NumberFormat
-  Oj.format = function(number, places, currency) {
-    return (currency || '') + number.toFixed(places || 0).replace(/(\d)(?=(\d{3})+(?:\.\d+)?$)/g, "$1,");
+  Oj.format = function(places, currency) {
+    let format = function(number) {
+      return (currency || '') + number.toFixed(places || 0).replace(/(\d)(?=(\d{3})+(?:\.\d+)?$)/g, "$1,");
+    }
+    return format;
   }
 
   // link an element or list of elements into a method chain
