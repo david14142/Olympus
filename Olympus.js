@@ -245,21 +245,24 @@
     for (const k of node.keys()) {
       keys.push(k);
     }
-    keys.sort((a,b) => {
-      if (Number.isNaN(a - b)) {
-        if (a < b) return -1;
-        else if (a > b) return 1;
-        else if (a === b) return 0;
-      } else return a-b;
-    });
+    keys.sort(numeric);
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
       let v = node.get(keys[k]);
-      callback(g, keys[k], v, v.leaves, k);
+      callback(g, keys[k], v, (v.leaves || 0), k);
       if (v[Symbol.toStringTag] == 'Map') {
         this.sort(v, callback, g);
       }
     }
+  }
+
+  // sort numbers as numbers
+  let numeric = function(a, b) {
+    if (Number.isNaN(a - b)) {
+      if (a < b) return -1;
+      else if (a > b) return 1;
+      else if (a === b) return 0;
+    } else return a-b;
   }
 
   Oj.DataFrame.prototype.index = function(name, columns, unique) {
@@ -418,7 +421,7 @@
 
   tree.prototype.find = function(group) {
     // If the columns in the group are not the same as in the tree this may
-    // return invalid data.  So don't so that.
+    // return invalid data.  So don't do that.
     var columns = Object.keys(group).sort();
     var node = this.root;
     for (let j=0; j < columns.length -1; j++) {
@@ -514,7 +517,7 @@
   // note that group is an array, not a collection
   order.prototype.find = function(group) {
     // If the columns in the group are not the same as in the tree this may
-    // return invalid data.  So don't so that.
+    // return invalid data.  So don't do that.
     var node = this.root;
     for (let j=0; j < group.length; j++) {
       let column = group[j];
@@ -604,7 +607,6 @@
   // Build an n-dimensional summary (a kind of cube) of the data.
   // Dimensions is an arrar of arrays.  Each array is a list of fields
   // that belong to the same dimension
-  // Todo: add sub-dimensions
   Oj.PivotTable.prototype.dimension = function(dimensions) {
     this.dimensions = dimensions;
     let crosstab = [];
@@ -615,20 +617,46 @@
     this.summary.reorder('pivot-order', crosstab);
     // create a margin (a summary) for every dimension ;
     this.margins = [];
+    this.total = this.reduce(this.expression);
     let group = Object.create(null);
     for (let d=0; d < dimensions.length; d++) {
       this.margins[d] = this.aggregate(dimensions[d], this.expression);
       this.margins[d].reorder('pivot-order', dimensions[d]);
       this.leaf(this.margins[d].indices['pivot-order'].root);
     }
-    this.total = this.reduce(this.expression);
     return this;
   }
 
-  // Traverses a dimensioned pivot table.  Used by the callback to write to HTML
+  // the subtotals array is three layers deep.  The top tier has an entry for
+  // each dimension.   Within each dimension is an entry for each subtotal, and
+  // each subtotal is a list of variables
+  Oj.PivotTable.prototype.subtotal = function(subtotals) {
+    this.subtotals = [];
+    this.subtotal_dimensions = subtotals;
+    for (let s=0; s < subtotals.length; s++) {
+      this.subtotals[s] = [];
+      // each entry for a dimension
+      for(let e=0; e < subtotals[s].length; e++) {
+        this.subtotals[s][e] = [];
+        // crosstab the subtotal with the other dimensions
+        let crosstab = [];
+        for (let d=0; d < this.dimensions.length; d++) {
+          if (d !== s) {
+            crosstab.push(this.dimensions[d]);
+          } else {
+            crosstab.push(subtotals[s][e]);
+          }
+        }
+        this.subtotals[s][e] = this.aggregate(crosstab, this.expression);
+      }
+    }
+    return this;
+  }
+
+  // traverses a dimensioned pivot table.  Used by the callback to write to HTML
   // (etc).  Callback is called with four arguments, (group, key, value, leaves,
   // , order).  Todo: is order really neccessary?
-  Oj.PivotTable.prototype.traverse = function(callback, final, init) {
+  Oj.PivotTable.prototype.traverse = function(callback) {
     var pivot = this;
     let traverse = function(margin, crossing) {
       pivot.sort(pivot.margins[margin].indices['pivot-order'].root,
@@ -641,14 +669,23 @@
               traverse(margin + 1, g);
             }
           }
-          if (typeof final != 'undefined') {
-            final(g, group[group.length - 1], v, leaves, order);
-          }
+          // if (typeof final != 'undefined') {
+          //   final(g, group[group.length - 1], v, leaves, order);
+          // }
         }
       );
     }
     traverse(0, []);
   }
+
+  Oj.PivotTable.prototype.navigate = function(node, callback) {
+    let keys = Array.from(node.keys()).sort(numeric);
+    callback(keys);
+  }
+
+
+
+
 
   // Add a leaf count to a margin
   // Todo: explore adding this to the margin creation process.
@@ -671,6 +708,10 @@
     this.summary.map(callback, this.summary);
     for(let k=0; k < this.margins.length; k++) {
       this.margins[k].map(callback, this.margins[k]);
+    }
+    let result = callback(this.total);
+    for (let j in result) {
+      this.total[j] = result[j];
     }
   }
 

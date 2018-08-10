@@ -97,6 +97,10 @@
         if (group.length == 1) { leaf_total += ( leaves || 1 ) }
       }
     );
+    if (options.row_totals) {
+      let span = options.column_headers ? this.dimensions[1].length * 2 : this.dimensions[1].length ;
+      hrows[0].push('th', {rowspan: this.dimensions[1].length * 2}, 'Total');
+    }
 
     // column headers - variable names
     if (options.column_headers) {
@@ -104,9 +108,6 @@
         hnames[j] = new Oj.Chain(Oj.create('tr'));
           hnames[j].push('th', {colspan: this.dimensions[0].length})
           hnames[j].push('th', {colspan: leaf_total }, this.dimensions[1][j]);
-          if (options.row_totals && j===0) {
-            hnames[j].push('th', {rowspan: this.dimensions[1].length * 2}, 'Total');
-          }
       }
     }
 
@@ -165,13 +166,10 @@
             row.push('td', '', options.formats[name](this.summary.data[name][value]));
           }
         }
-      },
-      // table body final function (row totals)
-      (group, key, value, leaves, order) => {
         if (options.row_totals && group.length == this.dimensions[0].length) {
           let total = this.margins[0].find(group);
-          for (e in total) {
-            name = options.columns[e];
+          for (let j=0; j < options.columns.length; j++) {
+            let name = options.columns[j];
             row.push('td', '', options.formats[name](total[name]));
           }
         }
@@ -197,8 +195,9 @@
 
     // grand total
     if (options.row_totals && options.column_totals) {
-      for (e in this.total) {
-        t.push('td', '', options.formats[e](this.total[e]));
+      for (let j=0; j < options.columns.length; j++) {
+        let name = options.columns[j];
+        t.push('td', '', options.formats[name](this.total[name]));
       }
     }
   }
@@ -219,8 +218,18 @@
 
   Oj.log = function(string) {
     let n = new Date();
-    console.log(n + '> ' + string )
+    if (arguments.length === 1) {
+      console.log(n + '> ' + string );
+    } else {
+      // let a; let s;
+      for (let i=0; i < arguments.length; i++) {
+        var a = typeof arguments[i] == 'undefined' ? '\\u' : arguments[i].toString();
+        var s = (typeof s == 'undefined' ? '' : s + '\t') + a;
+      }
+      console.log(n + '> ' + s);
+    }
   }
+
 
   // https://stackoverflow.com/questions/149055/
   // todo: use Intl.NumberFormat
