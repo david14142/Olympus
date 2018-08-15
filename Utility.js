@@ -221,14 +221,32 @@
     if (arguments.length === 1) {
       console.log(n + '> ' + string );
     } else {
-      // let a; let s;
       for (let i=0; i < arguments.length; i++) {
-        var a = typeof arguments[i] == 'undefined' ? '\\u' : arguments[i].toString();
+        let a;
+        if (typeof arguments[i] == 'undefined') {
+          a = '\\u';
+        } else if (typeof arguments[i] == 'object'  && !Array.isArray(arguments[i])) {
+          a = '\\o';
+        } else {
+          a = arguments[i].toString();
+        }
         var s = (typeof s == 'undefined' ? '' : s + '\t') + a;
       }
       console.log(n + '> ' + s);
     }
   }
+
+  // dummy interface for logging callbacks
+  Oj.Echo = class extends Oj.Interface {
+    constructor(dimension) {
+      super(dimension);
+    }
+  }
+  Oj.Echo.prototype.init = function(...args) { Oj.log.apply(null, ['init: '].concat(args)) };
+  Oj.Echo.prototype.begin = function(...args) { Oj.log.apply(null, ['begin: '].concat(args)) };
+  Oj.Echo.prototype.interior = function(...args) { Oj.log.apply(null, ['interior: '].concat(args)) };
+  Oj.Echo.prototype.end = function(...args) { Oj.log.apply(null, ['end: '].concat(args)) };
+  Oj.Echo.prototype.final = function(...args) { Oj.log.apply(null, ['final: '].concat(args)) };
 
 
   // https://stackoverflow.com/questions/149055/
@@ -239,6 +257,8 @@
     }
     return format;
   }
+
+
 
   // link an element or list of elements into a method chain
   Oj.Chain = function(element) {

@@ -193,8 +193,12 @@
       let column = this.columns[j];
       if (typeof i == 'number') {
         row[column] = this.data[column][i];
+      } else if (typeof i == 'object' && Array.isArray(i)) {
+        if (i.length === 1) {
+          row[column] = this.data[column][i[0]];
+        }
+        // todo: need to handle i being an array ;
       }
-      // todo: need to handle i being an array ;
     }
     return row;
   }
@@ -211,7 +215,8 @@
   // walks out an index, calling callback on each node.
   // (group is passed to each subsequent call)
   Oj.DataFrame.prototype.walk = function(node, callback, group) {
-    if (typeof group == 'undefined') var group = [];
+    // if (typeof group == 'undefined') var group = [];
+    group = group || [] ;
     for (const [key, value] of node) {
       let g = group.concat([key]);
       callback(g, key, value);
@@ -223,7 +228,8 @@
 
   // breadth first traversal
   Oj.DataFrame.prototype.breadth = function(node, callback, group) {
-    if (typeof group == 'undefined') var group = [];
+    // if (typeof group == 'undefined') var group = [];
+    group = group || [] ;
     for (const [key, value] of node) {
       let g = group.concat([key]);
       callback(g, key, value, value.leaves);
@@ -240,12 +246,9 @@
   // Traverse an index in sorted order.
   // todo : sort different columns differently
   Oj.DataFrame.prototype.sort = function(node, callback, group) {
-    if (typeof group == 'undefined') var group = [];
-    let keys = [];
-    for (const k of node.keys()) {
-      keys.push(k);
-    }
-    keys.sort(numeric);
+    // if (typeof group == 'undefined') var group = [];
+    group = group || [] ;
+    let keys = Array.from(node.keys()).sort(numeric);
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
       let v = node.get(keys[k]);
@@ -632,26 +635,51 @@
   // each subtotal is a list of variables
   Oj.PivotTable.prototype.subtotal = function(subtotals) {
     this.subtotals = [];
-    this.subtotal_dimensions = subtotals;
+    //this.subtotal_dimensions = subtotals;
+    this.subtotal_dimensions = [];
     for (let s=0; s < subtotals.length; s++) {
       this.subtotals[s] = [];
+      this.subtotal_dimensions[s] = [];
       // each entry for a dimension
       for(let e=0; e < subtotals[s].length; e++) {
         this.subtotals[s][e] = [];
+        this.subtotal_dimensions[s][e] = [];
         // crosstab the subtotal with the other dimensions
         let crosstab = [];
         for (let d=0; d < this.dimensions.length; d++) {
           if (d !== s) {
-            crosstab.push(this.dimensions[d]);
+            crosstab = crosstab.concat(this.dimensions[d]);
           } else {
-            crosstab.push(subtotals[s][e]);
+            crosstab = crosstab.concat(subtotals[s][e]);
           }
         }
+        this.subtotal_dimensions[s][e] = crosstab
         this.subtotals[s][e] = this.aggregate(crosstab, this.expression);
+        this.subtotals[s][e].reorder('pivot-order', crosstab);
       }
     }
     return this;
   }
+
+  // given a dimension and a group look for a matching subtotal entry
+  Oj.PivotTable.prototype.locate = function(dimension, group) {
+    let found = false;
+    for (let e=0; e < this.subtotal_dimensions[dimension].length; e++) {
+      if (shallow(group, this.subtotal_dimensions[dimension][e])) return e;
+    }
+    return null;
+  }
+
+  let shallow = function(a, b) {
+    if (a.length !== b.length) return false;
+    else {
+      for(i=0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    }
+  }
+
 
   // traverses a dimensioned pivot table.  Used by the callback to write to HTML
   // (etc).  Callback is called with four arguments, (group, key, value, leaves,
@@ -669,23 +697,48 @@
               traverse(margin + 1, g);
             }
           }
-          // if (typeof final != 'undefined') {
-          //   final(g, group[group.length - 1], v, leaves, order);
-          // }
         }
       );
     }
     traverse(0, []);
   }
 
-  Oj.PivotTable.prototype.navigate = function(node, callback) {
-    let keys = Array.from(node.keys()).sort(numeric);
-    callback(keys);
+  Oj.PivotTable.prototype.navigate = function(i = new Oj.Interface(), crossing=[]) {
+    let node = this.margins[i.dimension].indices['pivot-order'].root;
+    i.init(node.leaves);
+    this.collate(node, i, crossing);
+    i.final(node.leaves);
   }
 
-
-
-
+  Oj.PivotTable.prototype.collate = function(node, i, crossing) {
+    let keys = Array.from(node.keys()).sort(numeric);
+    let values = Array.from(node.values()).sort(numeric);
+    let names = this.summary.indices['pivot-order'].columns.slice(0,crossing.length+1);
+    let s = this.locate(i.dimension, names);
+    for(let k=0; k < keys.length; k++) {
+      let c = crossing.concat(keys[k]);
+      var u = null;
+      if (s !== null) {
+        u = this.subtotals[i.dimension][s].find(c, 'pivot-order');
+      }
+      if (values[k][Symbol.toStringTag] == 'Map') {
+        i.begin(c, values[k].leaves, u);
+        this.collate(values[k], i, c);
+        i.end(c, values[k].leaves, u);
+      } else {
+        if (i.follow && i.dimension < this.dimensions.length) {
+          i.begin(c, 1, u);
+          this.navigate(i.follow, c);
+          i.end(c, 1, u);
+        }
+        else {
+          //let v = this.summary.indices['pivot-order'].find(c) || null;
+          let v = this.summary.find(c, 'pivot-order') || null;
+          i.interior(crossing, keys[k], v);
+        }
+      }
+    }
+  }
 
   // Add a leaf count to a margin
   // Todo: explore adding this to the margin creation process.
@@ -714,6 +767,18 @@
       this.total[j] = result[j];
     }
   }
+
+  // Default interface does nothing.
+  // See Utility.js for some working implementations
+  Oj.Interface = function(dimension=0) {
+    this.dimension = dimension;
+  }
+  Oj.Interface.prototype.init = function(group) {}
+  Oj.Interface.prototype.begin = function(group) {}
+  Oj.Interface.prototype.interior = function(key, value) {}
+  Oj.Interface.prototype.end = function(group) {}
+  Oj.Interface.prototype.final = function(group) {}
+  // Oj.Interface.prototype.follow =
 
 } (this));
 
