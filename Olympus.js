@@ -663,6 +663,7 @@
 
   // given a dimension and a group look for a matching subtotal entry
   Oj.PivotTable.prototype.locate = function(dimension, group) {
+    if (typeof subtotals == 'undefined') return null;
     let found = false;
     for (let e=0; e < this.subtotal_dimensions[dimension].length; e++) {
       if (shallow(group, this.subtotal_dimensions[dimension][e])) return e;
@@ -679,7 +680,6 @@
       return true;
     }
   }
-
 
   // traverses a dimensioned pivot table.  Used by the callback to write to HTML
   // (etc).  Callback is called with four arguments, (group, key, value, leaves,
@@ -719,6 +719,7 @@
       let c = crossing.concat(keys[k]);
       var u = null;
       if (s !== null) {
+        // subtotal values, if any
         u = this.subtotals[i.dimension][s].find(c, 'pivot-order');
       }
       if (values[k][Symbol.toStringTag] == 'Map') {
@@ -773,11 +774,11 @@
   Oj.Interface = function(dimension=0) {
     this.dimension = dimension;
   }
-  Oj.Interface.prototype.init = function(group) {}
-  Oj.Interface.prototype.begin = function(group) {}
-  Oj.Interface.prototype.interior = function(key, value) {}
-  Oj.Interface.prototype.end = function(group) {}
-  Oj.Interface.prototype.final = function(group) {}
+  Oj.Interface.prototype.init = function() {}
+  Oj.Interface.prototype.begin = function() {}
+  Oj.Interface.prototype.interior = function() {}
+  Oj.Interface.prototype.end = function() {}
+  Oj.Interface.prototype.final = function() {}
   // Oj.Interface.prototype.follow =
 
 } (this));

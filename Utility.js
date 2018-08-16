@@ -33,175 +33,6 @@
     }
   }
 
-  // produce a cross tabulation from a 2-d summary of data
-  Oj.PivotTable.prototype.table = function(options) {
-    let defaults = {
-      nest_rows: true,
-      row_headers: true,
-      column_headers: true,
-      row_totals: true,
-      column_totals: true,
-      item_names: false,
-      columns: this.summary.columns,
-      formats: Object.create(null)
-    };
-
-    for (let o in defaults) {
-      if (typeof options[o] == 'undefined') options[o] = defaults[o];
-    }
-
-    for (let j=0; j < options.columns.length; j++) {
-      if (typeof options.formats[options.columns[j]] == 'undefined') {
-        options.formats[options.columns[j]] = Oj.format();
-      }
-    }
-
-    if (typeof options.id == 'undefined') {
-      throw 'table: Anchor element not specified.';
-    }
-    var div = Oj.getElementById(options.id);
-    div.e.innerHTML='';
-    var table = div.push('table');
-    var row;
-
-    // add a header to the table ;
-    let head = table.push('thead');
-    let hrows = [];
-    let hnames = [];
-    let leaf_total = 0;
-
-    for (let j=0; j < this.dimensions[1].length; j++) {
-      hrows[j] = new Oj.Chain(Oj.create('tr'));
-      if (options.row_headers && j == this.dimensions[1].length -1) {
-        for (let i=0; i < this.dimensions[0].length; i++) {
-          // row headers
-          hrows[j].push('th', '', this.dimensions[0][i]);
-        }
-      } else {
-        hrows[j].push('th', {colspan: this.dimensions[0].length});
-      }
-    }
-
-    // column names - variable column values
-    this.breadth(this.margins[1].indices['pivot-order'].root,
-      (group, key, value, leaves) => {
-        if (value[Symbol.toStringTag] != 'Map') {
-          if (options.columns.length > 1) {
-            hrows[group.length-1].push('th', {colspan: options.columns.length}, key.toString());
-          } else {
-            hrows[group.length-1].push('th', '', key.toString());
-          }
-        } else {
-          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, key.toString());
-        }
-        if (group.length == 1) { leaf_total += ( leaves || 1 ) }
-      }
-    );
-    if (options.row_totals) {
-      let span = options.column_headers ? this.dimensions[1].length * 2 : this.dimensions[1].length ;
-      hrows[0].push('th', {rowspan: this.dimensions[1].length * 2}, 'Total');
-    }
-
-    // column headers - variable names
-    if (options.column_headers) {
-      for (let j=0; j < this.dimensions[1].length ; j++) {
-        hnames[j] = new Oj.Chain(Oj.create('tr'));
-          hnames[j].push('th', {colspan: this.dimensions[0].length})
-          hnames[j].push('th', {colspan: leaf_total }, this.dimensions[1][j]);
-      }
-    }
-
-    // add item item names
-    if (options.item_names) {
-      hrows.push(new Oj.Chain(Oj.create('tr')));
-      for (let j=0; j < options.columns.length; j++) {
-        hrows[hrows.length-1].push('th', {colspan: this.dimensions[0].length})
-        hrows[hrows.length-1].push('th', {colspan: leaf_total }, options.columns[j]);
-      }
-    }
-
-    // link in the header structure
-    for (let j=0; j < this.dimensions[1].length; j++) {
-      if (options.column_headers) head.link(hnames[j]);
-      head.link(hrows[j]);
-      if (options.item_names) {
-        head.link(hrows[j+1]);
-      }
-    }
-
-    // add the table body ;
-    let body = table.push('tbody');
-    let h = [];
-    this.traverse(
-      (group, key, value, leaves, order) => {
-        // row headings
-        if (options.nest_rows) {
-          if (group.length < this.dimensions[0].length) {
-            h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
-          }
-          if (group.length === this.dimensions[0].length) {
-            row = body.push('tr');
-            for (let i=0; i < h.length; i++) {
-              row.append(h[i]);
-            }
-            row.push('th', '', key.toString());
-            h = [];
-          }
-        } else {
-          if (group.length == this.dimensions[0].length) {
-            row = body.push('tr');
-            for (let j=0; j < group.length; j++) {
-              row.push('th', '', group[j].toString());
-            }
-          }
-        }
-        // table interior
-        // todo: support multiple columns
-        // todo: number formatting options
-        if (value === null) {
-          row.push('td', '', '');
-        } else if (value[Symbol.toStringTag] != 'Map') {
-          for (let j=0; j < options.columns.length; j++) {
-            let name = options.columns[j];
-            row.push('td', '', options.formats[name](this.summary.data[name][value]));
-          }
-        }
-        if (options.row_totals && group.length == this.dimensions[0].length) {
-          let total = this.margins[0].find(group);
-          for (let j=0; j < options.columns.length; j++) {
-            let name = options.columns[j];
-            row.push('td', '', options.formats[name](total[name]));
-          }
-        }
-      }
-    );
-
-    // column totals
-    let t = body.push('tr');
-    t.push('th', {colspan: this.dimensions[0].length}, 'Total');
-    this.sort(this.margins[1].indices['pivot-order'].root,
-      (group, key, value) => {
-        //console.log(group);
-        if (group.length === this.dimensions[1].length) {
-          let i = this.margins[1].indices['pivot-order'].find(group);
-          //console.log(total);
-          for (e in options.columns) {
-            name = options.columns[e];
-            t.push('td', '', options.formats[name](this.margins[1].data[name][i] ));
-          }
-        }
-      }
-    );
-
-    // grand total
-    if (options.row_totals && options.column_totals) {
-      for (let j=0; j < options.columns.length; j++) {
-        let name = options.columns[j];
-        t.push('td', '', options.formats[name](this.total[name]));
-      }
-    }
-  }
-
   Oj.sum = function(column) {
     var sum = function(results, row) {
       return (results || 0) + row[column]
@@ -249,6 +80,179 @@
   Oj.Echo.prototype.final = function(...args) { Oj.log.apply(null, ['final: '].concat(args)) };
 
 
+  // interface for the last dimension (columns-interior) of a table
+  Oj.TableColumns = class extends Oj.Interface {
+    constructor(dimension) {
+      super(dimension);
+    }
+  }
+
+  Oj.PivotTable.prototype.table = function(options, dim = 0) {
+    const pivot = this;
+
+    let defaults = {
+      nest_rows: true,
+      row_headers: true,
+      column_headers: true,
+      row_totals: true,
+      column_totals: true,
+      item_names: false,
+      columns: this.summary.columns,
+      formats: Object.create(null)
+    };
+
+    for (let o in defaults) {
+      if (typeof options[o] == 'undefined') options[o] = defaults[o];
+    }
+
+    for (let j=0; j < options.columns.length; j++) {
+      if (typeof options.formats[options.columns[j]] == 'undefined') {
+        options.formats[options.columns[j]] = Oj.format();
+      }
+    }
+
+    let div = Oj.getElementById(options.id);
+    div.e.innerHTML='';
+    let table = div.push('table');
+    let body = table.push('tbody');
+    let h = [];
+    let row;
+
+    // add a header to the table ;
+    let head = table.push('thead');
+    let hrows = [];
+    let hnames = [];
+    let leaf_total = 0;
+
+    // Table init - sets up the column headings and the box
+
+    // todo: this needs to be decoupled from the pivot table structure
+    for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
+      hrows[j] = new Oj.Chain(Oj.create('tr'));
+      if (options.row_headers && j == pivot.dimensions[dim+1].length -1) {
+        for (let i=0; i < pivot.dimensions[dim].length; i++) {
+          // row headers
+          hrows[j].push('th', '', pivot.dimensions[dim][i]);
+        }
+      } else {
+        hrows[j].push('th', {colspan: pivot.dimensions[dim].length});
+      }
+    }
+
+    // column names - variable column values
+    pivot.breadth(pivot.margins[dim+1].indices['pivot-order'].root,
+      (group, key, value, leaves) => {
+        if (value[Symbol.toStringTag] != 'Map') {
+          if (options.columns.length > 1) {
+            hrows[group.length-1].push('th', {colspan: options.columns.length}, key.toString());
+          } else {
+            hrows[group.length-1].push('th', '', key.toString());
+          }
+        } else {
+          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, key.toString());
+        }
+        if (group.length == 1) { leaf_total += ( leaves || 1 ) }
+      }
+    );
+    if (options.row_totals) {
+      let span = options.column_headers ? pivot.dimensions[dim+1].length * 2 : pivot.dimensions[dim+1].length ;
+      hrows[0].push('th', {rowspan: pivot.dimensions[dim+1].length * 2}, 'Total');
+    }
+
+    // column headers - variable names
+    if (options.column_headers) {
+      for (let j=0; j < pivot.dimensions[dim+1].length ; j++) {
+        hnames[j] = new Oj.Chain(Oj.create('tr'));
+          hnames[j].push('th', {colspan: pivot.dimensions[dim].length})
+          hnames[j].push('th', {colspan: leaf_total }, pivot.dimensions[dim+1][j]);
+      }
+    }
+
+    // add item item names
+    if (options.item_names) {
+      hrows.push(new Oj.Chain(Oj.create('tr')));
+      for (let j=0; j < options.columns.length; j++) {
+        hrows[hrows.length-1].push('th', {colspan: pivot.dimensions[dim].length})
+        hrows[hrows.length-1].push('th', {colspan: leaf_total }, options.columns[j]);
+      }
+    }
+
+    // link in the header structure
+    for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
+      if (options.column_headers) head.link(hnames[j]);
+      head.link(hrows[j]);
+      if (options.item_names) {
+        head.link(hrows[j+1]);
+      }
+    }
+
+    let d1 = new Oj.Interface(1);
+    d1.interior = function(crossing, key, value) {
+      if (value === null) {
+        row.push('td', '', '');
+      } else {
+        for (let j=0; j < options.columns.length; j++) {
+          let name = options.columns[j];
+          row.push('td', '', options.formats[name](value[name]));
+        }
+      }
+    }
+
+    let d0 = new Oj.Interface(0);
+    d0.follow = d1;
+
+    d0.begin = function(group, leaves, subtotal) {
+      // row headings
+      const key = group[group.length-1];
+      if (options.nest_rows) {
+        if (group.length < pivot.dimensions[dim].length) {
+          h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
+        }
+        if (group.length === pivot.dimensions[dim].length) {
+          row = body.push('tr');
+          for (let i=0; i < h.length; i++) {
+            row.append(h[i]);
+          }
+          row.push('th', '', key.toString());
+          h = [];
+        }
+      } else {
+        if (group.length == pivot.dimensions[dim].length) {
+          row = body.push('tr');
+          for (let j=0; j < group.length; j++) {
+            row.push('th', '', group[j].toString());
+          }
+        }
+      }
+    }
+
+    d0.final = function() {
+      // column totals
+      let t = body.push('tr');
+      t.push('th', {colspan: pivot.dimensions[dim].length}, 'Total');
+      pivot.sort(pivot.margins[dim+1].indices['pivot-order'].root,
+        (group, key, value) => {
+          if (group.length === pivot.dimensions[dim+1].length) {
+            let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
+            for (e in options.columns) {
+              name = options.columns[e];
+              t.push('td', '', options.formats[name](pivot.margins[dim+1].data[name][i] ));
+            }
+          }
+        }
+      );
+      // grand total
+      if (options.row_totals && options.column_totals) {
+        for (let j=0; j < options.columns.length; j++) {
+          let name = options.columns[j];
+          t.push('td', '', options.formats[name](pivot.total[name]));
+        }
+      }
+    }
+
+    this.navigate(d0);
+  }
+
   // https://stackoverflow.com/questions/149055/
   // todo: use Intl.NumberFormat
   Oj.format = function(places, currency) {
@@ -257,8 +261,6 @@
     }
     return format;
   }
-
-
 
   // link an element or list of elements into a method chain
   Oj.Chain = function(element) {
