@@ -19,6 +19,13 @@
 
 // Olympus.js Core functionality - Data and Index structures.
 
+
+// Global constants
+// a key that can't occur in data, used in margins
+const SUBTOTAL = Symbol('oj-subtotal');
+
+
+
 (function(global) {
 
   global.Oj = global.Oj || {} ;
@@ -214,9 +221,7 @@
 
   // walks out an index, calling callback on each node.
   // (group is passed to each subsequent call)
-  Oj.DataFrame.prototype.walk = function(node, callback, group) {
-    // if (typeof group == 'undefined') var group = [];
-    group = group || [] ;
+  Oj.DataFrame.prototype.walk = function(node, callback, group=[]) {
     for (const [key, value] of node) {
       let g = group.concat([key]);
       callback(g, key, value);
@@ -227,9 +232,7 @@
   }
 
   // breadth first traversal
-  Oj.DataFrame.prototype.breadth = function(node, callback, group) {
-    // if (typeof group == 'undefined') var group = [];
-    group = group || [] ;
+  Oj.DataFrame.prototype.breadth = function(node, callback, group=[]) {
     for (const [key, value] of node) {
       let g = group.concat([key]);
       callback(g, key, value, value.leaves);
@@ -237,7 +240,6 @@
     for (const [key, value] of node) {
       let g = group.concat([key]);
       if (value[Symbol.toStringTag] == 'Map') {
-        //this.walk(value, callback, g);
         this.breadth(value, callback, g);
       }
     }
@@ -245,9 +247,7 @@
 
   // Traverse an index in sorted order.
   // todo : sort different columns differently
-  Oj.DataFrame.prototype.sort = function(node, callback, group) {
-    // if (typeof group == 'undefined') var group = [];
-    group = group || [] ;
+  Oj.DataFrame.prototype.sort = function(node, callback, group=[]) {
     let keys = Array.from(node.keys()).sort(numeric);
     for(let k=0; k < keys.length; k++) {
       let g = group.concat(keys[k]);
@@ -261,6 +261,8 @@
 
   // sort numbers as numbers
   let numeric = function(a, b) {
+    if (typeof a == 'object' || typeof b == 'object'
+      || typeof a == 'symbol' || typeof b == 'symbol') return 0
     if (Number.isNaN(a - b)) {
       if (a < b) return -1;
       else if (a > b) return 1;
@@ -618,6 +620,7 @@
     }
     this.summary = this.aggregate(crosstab, this.expression);
     this.summary.reorder('pivot-order', crosstab);
+    //this.summary.surface('pivot-order');
     // create a margin (a summary) for every dimension ;
     this.margins = [];
     this.total = this.reduce(this.expression);
@@ -627,46 +630,86 @@
       this.margins[d].reorder('pivot-order', dimensions[d]);
       this.leaf(this.margins[d].indices['pivot-order'].root);
     }
-    return this;
+    this.subtotals = [];
+    this.subtotal_dim = [];
   }
 
-  // the subtotals array is three layers deep.  The top tier has an entry for
-  // each dimension.   Within each dimension is an entry for each subtotal, and
-  // each subtotal is a list of variables
-  Oj.PivotTable.prototype.subtotal = function(subtotals) {
-    this.subtotals = [];
-    //this.subtotal_dimensions = subtotals;
-    this.subtotal_dimensions = [];
-    for (let s=0; s < subtotals.length; s++) {
-      this.subtotals[s] = [];
-      this.subtotal_dimensions[s] = [];
-      // each entry for a dimension
-      for(let e=0; e < subtotals[s].length; e++) {
-        this.subtotals[s][e] = [];
-        this.subtotal_dimensions[s][e] = [];
-        // crosstab the subtotal with the other dimensions
-        let crosstab = [];
-        for (let d=0; d < this.dimensions.length; d++) {
-          if (d !== s) {
-            crosstab = crosstab.concat(this.dimensions[d]);
-          } else {
-            crosstab = crosstab.concat(subtotals[s][e]);
+  Oj.PivotTable.prototype.subtotal = function(subtotal) {
+    this.subtotals = this.subtotals || [];
+    this.subtotal_dim = this.subtotal_dim || [];
+    var intersection;
+    var columns;
+    let addend = function(node, crossing=[]) {
+      let keys = Array.from(node.keys());
+      for (let k=0; k < keys.length; k++) {
+        let key = keys[k];
+        let value = node.get(key);
+        let c = crossing.concat(key);
+        if (value[Symbol.toStringTag] == 'Map') {
+          let x = intersection.find(c, 'subtotal-order');
+          if (Object.keys(x).length !== 0) {
+            let e = {
+              subtotal: n,
+              row: x
+            }
+            value.set(SUBTOTAL, e);
           }
+          addend(value, c);
         }
-        this.subtotal_dimensions[s][e] = crosstab
-        this.subtotals[s][e] = this.aggregate(crosstab, this.expression);
-        this.subtotals[s][e].reorder('pivot-order', crosstab);
       }
     }
-    return this;
+
+    if (this.locate(subtotal) === null) {
+      var s = this.aggregate(subtotal, this.expression);
+      s.reorder('subtotal-order', subtotal);
+      this.subtotals.push(s);
+      this.subtotal_dim.push(subtotal);
+    }
+
+    // now add to the subtotals to the margins
+    var n = this.subtotals.length-1;
+    for (let m=0; m < this.margins.length; m++) {
+      columns = intersect(this.dimensions[m], subtotal);
+      intersection = this.aggregate(columns, this.expression);
+      intersection.reorder('subtotal-order', columns);
+      addend(this.margins[m].indices['pivot-order'].root);
+      this.leaf(this.margins[m].indices['pivot-order'].root);
+    }
   }
 
-  // given a dimension and a group look for a matching subtotal entry
-  Oj.PivotTable.prototype.locate = function(dimension, group) {
-    if (typeof subtotals == 'undefined') return null;
-    let found = false;
-    for (let e=0; e < this.subtotal_dimensions[dimension].length; e++) {
-      if (shallow(group, this.subtotal_dimensions[dimension][e])) return e;
+  // Adds subtotal information to margin nodes
+  // Oj.PivotTable.prototype.addend = function (node, margin, subtotal, number, crossing=[]) {
+  //   let keys = Array.from(node.keys());
+  //   for (let k=0; k < keys.length; k++) {
+  //     let key = keys[k];
+  //     let value = node.get(key);
+  //     let c = crossing.concat(key);
+  //     if (value[Symbol.toStringTag] == 'Map') {
+  //       let x = subtotal.find(c, 'subtotal-order');
+  //       if (Object.keys(x).length !== 0) {
+  //         value.set(SUBTOTAL, number);
+  //       }
+  //       this.addend(value, margin, subtotal, number, c);
+  //     }
+  //     else if (margin < this.dimensions.length - 1) {
+  //       let root = this.margins[margin+1].indices['pivot-order'].root;
+  //       this.addend(root, margin + 1, subtotal, number, c);
+  //     }
+  //   }
+  // }
+
+  // find an intersection of two arrays
+  let intersect = function (a, b) {
+    let s = new Set(b);
+    let intersection = new Set(a.filter(x => s.has(x)));
+    return Array.from(intersection);
+  }
+
+  // given a a group look for a matching subtotal entry
+  Oj.PivotTable.prototype.locate = function(group) {
+    if (typeof this.subtotal_dim == 'undefined') return null;
+    for (let e=0; e < this.subtotal_dim.length; e++) {
+      if (shallow(group, this.subtotal_dim[e])) return e;
     }
     return null;
   }
@@ -674,33 +717,11 @@
   let shallow = function(a, b) {
     if (a.length !== b.length) return false;
     else {
-      for(i=0; i < a.length; i++) {
+      for(let i=0; i < a.length; i++) {
         if (a[i] !== b[i]) return false;
       }
       return true;
     }
-  }
-
-  // traverses a dimensioned pivot table.  Used by the callback to write to HTML
-  // (etc).  Callback is called with four arguments, (group, key, value, leaves,
-  // , order).  Todo: is order really neccessary?
-  Oj.PivotTable.prototype.traverse = function(callback) {
-    var pivot = this;
-    let traverse = function(margin, crossing) {
-      pivot.sort(pivot.margins[margin].indices['pivot-order'].root,
-        (group, key, value, leaves, order) => {
-          let g = crossing.concat(group);
-          let v = pivot.summary.indices['pivot-order'].find(g) || null;
-          callback(g, group[group.length - 1], v, leaves, order);
-          if (value[Symbol.toStringTag] != 'Map') {
-            if (margin < pivot.dimensions.length - 1) {
-              traverse(margin + 1, g);
-            }
-          }
-        }
-      );
-    }
-    traverse(0, []);
   }
 
   Oj.PivotTable.prototype.navigate = function(i = new Oj.Interface(), crossing=[]) {
@@ -712,30 +733,46 @@
 
   Oj.PivotTable.prototype.collate = function(node, i, crossing) {
     let keys = Array.from(node.keys()).sort(numeric);
-    let values = Array.from(node.values()).sort(numeric);
-    let names = this.summary.indices['pivot-order'].columns.slice(0,crossing.length+1);
-    let s = this.locate(i.dimension, names);
+    let subtotals = [];
+    var v;
     for(let k=0; k < keys.length; k++) {
-      let c = crossing.concat(keys[k]);
-      var u = null;
-      if (s !== null) {
-        // subtotal values, if any
-        u = this.subtotals[i.dimension][s].find(c, 'pivot-order');
-      }
-      if (values[k][Symbol.toStringTag] == 'Map') {
-        i.begin(c, values[k].leaves, u);
-        this.collate(values[k], i, c);
-        i.end(c, values[k].leaves, u);
+      let key = keys[k];
+      let value = node.get(key);
+      //let c = crossing.concat(key);
+      let c = crossing.concat({key, value});
+      let group = c.map(e => e.key);
+      let g = group.filter(e => e != SUBTOTAL);
+      //console.log(group);
+
+      if (value[Symbol.toStringTag] == 'Map') {
+        i.begin(group, value.leaves, subtotals);
+        this.collate(value, i, c);
+        i.end(group, value.leaves, subtotals);
       } else {
         if (i.follow && i.dimension < this.dimensions.length) {
-          i.begin(c, 1, u);
+          i.begin(group, 1, subtotals);
+          //if (key !== SUBTOTAL) this.navigate(i.follow, c);
           this.navigate(i.follow, c);
-          i.end(c, 1, u);
-        }
-        else {
-          //let v = this.summary.indices['pivot-order'].find(c) || null;
-          let v = this.summary.find(c, 'pivot-order') || null;
-          i.interior(crossing, keys[k], v);
+          i.end(group, 1, subtotals);
+        } else {
+          // we don't actually want the value of the last margin (it's a total)
+          // instead we look up the crossing in the summary dataset
+          if (key === SUBTOTAL) {
+            //console.log(this.subtotals[value.subtotal]);
+            v = this.subtotals[value.subtotal].find(g, 'subtotal-order');
+          } else if (typeof value == 'object' && Array.isArray(value)) {
+            if (group.includes(SUBTOTAL)) {
+              let s = c[group.lastIndexOf(SUBTOTAL)].value.subtotal;
+              v = this.subtotals[s].find(g, 'subtotal-order');
+            } else {
+              v = this.summary.find(group, 'pivot-order');
+              v = Object.keys(v).length === 0 ? null : v;
+            }
+          } else {
+            //v = value;
+          }
+          v = v || null;
+          i.interior(group, key, v);
         }
       }
     }

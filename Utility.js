@@ -97,7 +97,8 @@
       row_totals: true,
       column_totals: true,
       item_names: false,
-      columns: this.summary.columns,
+      //columns: this.summary.columns,
+      columns: Object.keys(this.expression),
       formats: Object.create(null)
     };
 
@@ -114,15 +115,15 @@
     let div = Oj.getElementById(options.id);
     div.e.innerHTML='';
     let table = div.push('table');
-    let body = table.push('tbody');
-    let h = [];
-    let row;
-
     // add a header to the table ;
     let head = table.push('thead');
     let hrows = [];
     let hnames = [];
     let leaf_total = 0;
+    // table body ;
+    let body = table.push('tbody');
+    let h = [];
+    let row;
 
     // Table init - sets up the column headings and the box
 
@@ -142,14 +143,15 @@
     // column names - variable column values
     pivot.breadth(pivot.margins[dim+1].indices['pivot-order'].root,
       (group, key, value, leaves) => {
+        var k = key === SUBTOTAL ? 'Total' : key;
         if (value[Symbol.toStringTag] != 'Map') {
           if (options.columns.length > 1) {
-            hrows[group.length-1].push('th', {colspan: options.columns.length}, key.toString());
+            hrows[group.length-1].push('th', {colspan: options.columns.length}, k.toString());
           } else {
-            hrows[group.length-1].push('th', '', key.toString());
+            hrows[group.length-1].push('th', '', k.toString());
           }
         } else {
-          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, key.toString());
+          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, k.toString());
         }
         if (group.length == 1) { leaf_total += ( leaves || 1 ) }
       }
@@ -188,6 +190,7 @@
 
     let d1 = new Oj.Interface(1);
     d1.interior = function(crossing, key, value) {
+      //console.log(value);
       if (value === null) {
         row.push('td', '', '');
       } else {
@@ -198,12 +201,14 @@
       }
     }
 
+
     let d0 = new Oj.Interface(0);
     d0.follow = d1;
 
-    d0.begin = function(group, leaves, subtotal) {
+    d0.begin = function(group, leaves) {
       // row headings
-      const key = group[group.length-1];
+      let key = group[group.length-1];
+      key = key === SUBTOTAL ? 'Total' : key;
       if (options.nest_rows) {
         if (group.length < pivot.dimensions[dim].length) {
           h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
@@ -233,10 +238,17 @@
       pivot.sort(pivot.margins[dim+1].indices['pivot-order'].root,
         (group, key, value) => {
           if (group.length === pivot.dimensions[dim+1].length) {
-            let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
-            for (e in options.columns) {
-              name = options.columns[e];
-              t.push('td', '', options.formats[name](pivot.margins[dim+1].data[name][i] ));
+            if (key === SUBTOTAL) {
+              for (let e in options.columns) {
+                name = options.columns[e];
+                t.push('td', '', options.formats[name](value.row[name]));
+              }
+            } else {
+              let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
+              for (let e in options.columns) {
+                name = options.columns[e];
+                t.push('td', '', options.formats[name](pivot.margins[dim+1].data[name][i] ));
+              }
             }
           }
         }
@@ -246,6 +258,16 @@
         for (let j=0; j < options.columns.length; j++) {
           let name = options.columns[j];
           t.push('td', '', options.formats[name](pivot.total[name]));
+        }
+      }
+    }
+
+    d0.end = function(group, leaves) {
+      if (options.row_totals && group.length == pivot.dimensions[dim].length) {
+        let i = pivot.margins[dim].indices['pivot-order'].find(group);
+        for (let e in options.columns) {
+          name = options.columns[e];
+          row.push('td', '', options.formats[name](pivot.margins[dim].data[name][i]));
         }
       }
     }
