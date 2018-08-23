@@ -79,7 +79,6 @@
   Oj.Echo.prototype.end = function(...args) { Oj.log.apply(null, ['end: '].concat(args)) };
   Oj.Echo.prototype.final = function(...args) { Oj.log.apply(null, ['final: '].concat(args)) };
 
-
   // interface for the last dimension (columns-interior) of a table
   Oj.TableColumns = class extends Oj.Interface {
     constructor(dimension) {
@@ -87,8 +86,11 @@
     }
   }
 
-  Oj.PivotTable.prototype.table = function(options, dim = 0) {
+  Oj.PivotTable.prototype.table = function(options) {
     const pivot = this;
+
+    // starting dimension for the 2-d table
+    let dim = this.dimensions.length === 2 ? 0 : 1;
 
     let defaults = {
       nest_rows: true,
@@ -97,7 +99,6 @@
       row_totals: true,
       column_totals: true,
       item_names: false,
-      //columns: this.summary.columns,
       columns: Object.keys(this.expression),
       formats: Object.create(null)
     };
@@ -114,6 +115,9 @@
 
     let div = Oj.getElementById(options.id);
     div.e.innerHTML='';
+    if (this.dimensions.length === 3) {
+
+    }
     let table = div.push('table');
     // add a header to the table ;
     let head = table.push('thead');
@@ -188,42 +192,42 @@
       }
     }
 
-    let d1 = new Oj.Interface(1);
+    let d1 = new Oj.Interface(dim+1);
     d1.interior = function(crossing, key, value) {
-      //console.log(value);
+      let a = key === SUBTOTAL ? {class: 'st'} : '';
       if (value === null) {
-        row.push('td', '', '');
+        row.push('td', a, '');
       } else {
         for (let j=0; j < options.columns.length; j++) {
           let name = options.columns[j];
-          row.push('td', '', options.formats[name](value[name]));
+          row.push('td', a, options.formats[name](value[name]));
         }
       }
     }
 
-
-    let d0 = new Oj.Interface(0);
+    let d0 = new Oj.Interface(dim);
     d0.follow = d1;
 
     d0.begin = function(group, leaves) {
       // row headings
       let key = group[group.length-1];
-      key = key === SUBTOTAL ? 'Total' : key;
+      let k = key === SUBTOTAL ? 'Total' : key;
+      let a = key === SUBTOTAL ? {class: 'st'} : '';
       if (options.nest_rows) {
         if (group.length < pivot.dimensions[dim].length) {
-          h.push(Oj.create('th', {rowspan: leaves }, key.toString()))
+          h.push(Oj.create('th', {rowspan: leaves }, k.toString()))
         }
         if (group.length === pivot.dimensions[dim].length) {
-          row = body.push('tr');
+          row = body.push('tr', a);
           for (let i=0; i < h.length; i++) {
             row.append(h[i]);
           }
-          row.push('th', '', key.toString());
+          row.push('th', '', k.toString());
           h = [];
         }
       } else {
         if (group.length == pivot.dimensions[dim].length) {
-          row = body.push('tr');
+          row = body.push('tr', a);
           for (let j=0; j < group.length; j++) {
             row.push('th', '', group[j].toString());
           }
@@ -241,7 +245,7 @@
             if (key === SUBTOTAL) {
               for (let e in options.columns) {
                 name = options.columns[e];
-                t.push('td', '', options.formats[name](value.row[name]));
+                t.push('td', {class: 'st'}, options.formats[name](value.row[name]));
               }
             } else {
               let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
@@ -272,7 +276,17 @@
       }
     }
 
-    this.navigate(d0);
+    if (this.dimensions.length === 2) {
+      this.navigate(d0);
+    } else {
+      let tabs = new Oj.Interface(0);
+      tabs.follow = d0;
+      tabs.begin = function(group, leaves) {
+
+      }
+    }
+
+
   }
 
   // https://stackoverflow.com/questions/149055/

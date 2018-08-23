@@ -620,7 +620,6 @@ const SUBTOTAL = Symbol('oj-subtotal');
     }
     this.summary = this.aggregate(crosstab, this.expression);
     this.summary.reorder('pivot-order', crosstab);
-    //this.summary.surface('pivot-order');
     // create a margin (a summary) for every dimension ;
     this.margins = [];
     this.total = this.reduce(this.expression);
@@ -677,27 +676,6 @@ const SUBTOTAL = Symbol('oj-subtotal');
     }
   }
 
-  // Adds subtotal information to margin nodes
-  // Oj.PivotTable.prototype.addend = function (node, margin, subtotal, number, crossing=[]) {
-  //   let keys = Array.from(node.keys());
-  //   for (let k=0; k < keys.length; k++) {
-  //     let key = keys[k];
-  //     let value = node.get(key);
-  //     let c = crossing.concat(key);
-  //     if (value[Symbol.toStringTag] == 'Map') {
-  //       let x = subtotal.find(c, 'subtotal-order');
-  //       if (Object.keys(x).length !== 0) {
-  //         value.set(SUBTOTAL, number);
-  //       }
-  //       this.addend(value, margin, subtotal, number, c);
-  //     }
-  //     else if (margin < this.dimensions.length - 1) {
-  //       let root = this.margins[margin+1].indices['pivot-order'].root;
-  //       this.addend(root, margin + 1, subtotal, number, c);
-  //     }
-  //   }
-  // }
-
   // find an intersection of two arrays
   let intersect = function (a, b) {
     let s = new Set(b);
@@ -738,12 +716,9 @@ const SUBTOTAL = Symbol('oj-subtotal');
     for(let k=0; k < keys.length; k++) {
       let key = keys[k];
       let value = node.get(key);
-      //let c = crossing.concat(key);
       let c = crossing.concat({key, value});
       let group = c.map(e => e.key);
       let g = group.filter(e => e != SUBTOTAL);
-      //console.log(group);
-
       if (value[Symbol.toStringTag] == 'Map') {
         i.begin(group, value.leaves, subtotals);
         this.collate(value, i, c);
@@ -751,14 +726,12 @@ const SUBTOTAL = Symbol('oj-subtotal');
       } else {
         if (i.follow && i.dimension < this.dimensions.length) {
           i.begin(group, 1, subtotals);
-          //if (key !== SUBTOTAL) this.navigate(i.follow, c);
           this.navigate(i.follow, c);
           i.end(group, 1, subtotals);
         } else {
           // we don't actually want the value of the last margin (it's a total)
           // instead we look up the crossing in the summary dataset
           if (key === SUBTOTAL) {
-            //console.log(this.subtotals[value.subtotal]);
             v = this.subtotals[value.subtotal].find(g, 'subtotal-order');
           } else if (typeof value == 'object' && Array.isArray(value)) {
             if (group.includes(SUBTOTAL)) {
@@ -768,8 +741,6 @@ const SUBTOTAL = Symbol('oj-subtotal');
               v = this.summary.find(group, 'pivot-order');
               v = Object.keys(v).length === 0 ? null : v;
             }
-          } else {
-            //v = value;
           }
           v = v || null;
           i.interior(group, key, v);
@@ -799,6 +770,9 @@ const SUBTOTAL = Symbol('oj-subtotal');
     this.summary.map(callback, this.summary);
     for(let k=0; k < this.margins.length; k++) {
       this.margins[k].map(callback, this.margins[k]);
+    }
+    for(let k=0; k < this.subtotals.length; k++) {
+      this.subtotals[k].map(callback, this.subtotals[k]);
     }
     let result = callback(this.total);
     for (let j in result) {
