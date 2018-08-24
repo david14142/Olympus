@@ -91,6 +91,11 @@
 
     // starting dimension for the 2-d table
     let dim = this.dimensions.length === 2 ? 0 : 1;
+    if (dim === 0) {
+      var row_depth = pivot.dimensions[0].length;
+    } else {
+      var row_depth = pivot.dimensions[0].length + pivot.dimensions[1].length;
+    }
 
     let defaults = {
       nest_rows: true,
@@ -115,82 +120,14 @@
 
     let div = Oj.getElementById(options.id);
     div.e.innerHTML='';
-    if (this.dimensions.length === 3) {
-
-    }
-    let table = div.push('table');
-    // add a header to the table ;
-    let head = table.push('thead');
+    let table;
+    let head;
+    let body;
     let hrows = [];
     let hnames = [];
     let leaf_total = 0;
-    // table body ;
-    let body = table.push('tbody');
     let h = [];
     let row;
-
-    // Table init - sets up the column headings and the box
-
-    // todo: this needs to be decoupled from the pivot table structure
-    for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
-      hrows[j] = new Oj.Chain(Oj.create('tr'));
-      if (options.row_headers && j == pivot.dimensions[dim+1].length -1) {
-        for (let i=0; i < pivot.dimensions[dim].length; i++) {
-          // row headers
-          hrows[j].push('th', '', pivot.dimensions[dim][i]);
-        }
-      } else {
-        hrows[j].push('th', {colspan: pivot.dimensions[dim].length});
-      }
-    }
-
-    // column names - variable column values
-    pivot.breadth(pivot.margins[dim+1].indices['pivot-order'].root,
-      (group, key, value, leaves) => {
-        var k = key === SUBTOTAL ? 'Total' : key;
-        if (value[Symbol.toStringTag] != 'Map') {
-          if (options.columns.length > 1) {
-            hrows[group.length-1].push('th', {colspan: options.columns.length}, k.toString());
-          } else {
-            hrows[group.length-1].push('th', '', k.toString());
-          }
-        } else {
-          hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, k.toString());
-        }
-        if (group.length == 1) { leaf_total += ( leaves || 1 ) }
-      }
-    );
-    if (options.row_totals) {
-      let span = options.column_headers ? pivot.dimensions[dim+1].length * 2 : pivot.dimensions[dim+1].length ;
-      hrows[0].push('th', {rowspan: pivot.dimensions[dim+1].length * 2}, 'Total');
-    }
-
-    // column headers - variable names
-    if (options.column_headers) {
-      for (let j=0; j < pivot.dimensions[dim+1].length ; j++) {
-        hnames[j] = new Oj.Chain(Oj.create('tr'));
-          hnames[j].push('th', {colspan: pivot.dimensions[dim].length})
-          hnames[j].push('th', {colspan: leaf_total }, pivot.dimensions[dim+1][j]);
-      }
-    }
-
-    // add item item names
-    if (options.item_names) {
-      hrows.push(new Oj.Chain(Oj.create('tr')));
-      for (let j=0; j < options.columns.length; j++) {
-        hrows[hrows.length-1].push('th', {colspan: pivot.dimensions[dim].length})
-        hrows[hrows.length-1].push('th', {colspan: leaf_total }, options.columns[j]);
-      }
-    }
-
-    // link in the header structure
-    for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
-      if (options.column_headers) head.link(hnames[j]);
-      head.link(hrows[j]);
-      if (options.item_names) {
-        head.link(hrows[j+1]);
-      }
-    }
 
     let d1 = new Oj.Interface(dim+1);
     d1.interior = function(crossing, key, value) {
@@ -208,16 +145,85 @@
     let d0 = new Oj.Interface(dim);
     d0.follow = d1;
 
+    d0.init = function() {
+      table = div.push('table');
+      // add a header to the table ;
+      head = table.push('thead');
+      // table body ;
+      body = table.push('tbody');
+      // Table init - sets up the column headings and the box
+      // todo: this needs to be decoupled from the pivot table structure
+      for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
+        hrows[j] = new Oj.Chain(Oj.create('tr'));
+        if (options.row_headers && j == pivot.dimensions[dim+1].length -1) {
+          for (let i=0; i < pivot.dimensions[dim].length; i++) {
+            // row headers
+            hrows[j].push('th', '', pivot.dimensions[dim][i]);
+          }
+        } else {
+          hrows[j].push('th', {colspan: pivot.dimensions[dim].length});
+        }
+      }
+
+      // column names - variable column values
+      pivot.breadth(pivot.margins[dim+1].indices['pivot-order'].root,
+        (group, key, value, leaves) => {
+          var k = key === SUBTOTAL ? 'Total' : key;
+          if (value[Symbol.toStringTag] != 'Map') {
+            if (options.columns.length > 1) {
+              hrows[group.length-1].push('th', {colspan: options.columns.length}, k.toString());
+            } else {
+              hrows[group.length-1].push('th', '', k.toString());
+            }
+          } else {
+            hrows[group.length-1].push('th', {colspan: leaves * options.columns.length}, k.toString());
+          }
+          if (group.length == 1) { leaf_total += ( leaves || 1 ) }
+        }
+      );
+      if (options.row_totals) {
+        let span = options.column_headers ? pivot.dimensions[dim+1].length * 2 : pivot.dimensions[dim+1].length ;
+        hrows[0].push('th', {rowspan: pivot.dimensions[dim+1].length * 2}, 'Total');
+      }
+
+      // column headers - variable names
+      if (options.column_headers) {
+        for (let j=0; j < pivot.dimensions[dim+1].length ; j++) {
+          hnames[j] = new Oj.Chain(Oj.create('tr'));
+            hnames[j].push('th', {colspan: pivot.dimensions[dim].length})
+            hnames[j].push('th', {colspan: leaf_total }, pivot.dimensions[dim+1][j]);
+        }
+      }
+
+      // add item item names
+      if (options.item_names) {
+        hrows.push(new Oj.Chain(Oj.create('tr')));
+        for (let j=0; j < options.columns.length; j++) {
+          hrows[hrows.length-1].push('th', {colspan: pivot.dimensions[dim].length})
+          hrows[hrows.length-1].push('th', {colspan: leaf_total }, options.columns[j]);
+        }
+      }
+
+      // link in the header structure
+      for (let j=0; j < pivot.dimensions[dim+1].length; j++) {
+        if (options.column_headers) head.link(hnames[j]);
+        head.link(hrows[j]);
+        if (options.item_names) {
+          head.link(hrows[j+1]);
+        }
+      }
+    }
+
     d0.begin = function(group, leaves) {
       // row headings
       let key = group[group.length-1];
       let k = key === SUBTOTAL ? 'Total' : key;
       let a = key === SUBTOTAL ? {class: 'st'} : '';
       if (options.nest_rows) {
-        if (group.length < pivot.dimensions[dim].length) {
+        if (group.length < row_depth) {
           h.push(Oj.create('th', {rowspan: leaves }, k.toString()))
         }
-        if (group.length === pivot.dimensions[dim].length) {
+        if (group.length === row_depth) {
           row = body.push('tr', a);
           for (let i=0; i < h.length; i++) {
             row.append(h[i]);
@@ -226,7 +232,7 @@
           h = [];
         }
       } else {
-        if (group.length == pivot.dimensions[dim].length) {
+        if (group.length === row_depth) {
           row = body.push('tr', a);
           for (let j=0; j < group.length; j++) {
             row.push('th', '', group[j].toString());
@@ -237,31 +243,34 @@
 
     d0.final = function() {
       // column totals
-      let t = body.push('tr');
-      t.push('th', {colspan: pivot.dimensions[dim].length}, 'Total');
-      pivot.sort(pivot.margins[dim+1].indices['pivot-order'].root,
-        (group, key, value) => {
-          if (group.length === pivot.dimensions[dim+1].length) {
-            if (key === SUBTOTAL) {
-              for (let e in options.columns) {
-                name = options.columns[e];
-                t.push('td', {class: 'st'}, options.formats[name](value.row[name]));
-              }
-            } else {
-              let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
-              for (let e in options.columns) {
-                name = options.columns[e];
-                t.push('td', '', options.formats[name](pivot.margins[dim+1].data[name][i] ));
+      // todo: this needs to be fixed for 3d tables
+      if (options.column_totals && pivot.dimensions.length < 3) {
+        let t = body.push('tr');
+        t.push('th', {colspan: pivot.dimensions[dim].length}, 'Total');
+        pivot.sort(pivot.margins[dim+1].indices['pivot-order'].root,
+          (group, key, value) => {
+            if (group.length === pivot.dimensions[dim+1].length) {
+              if (key === SUBTOTAL) {
+                for (let e in options.columns) {
+                  name = options.columns[e];
+                  t.push('td', {class: 'st'}, options.formats[name](value.row[name]));
+                }
+              } else {
+                let i = pivot.margins[dim+1].indices['pivot-order'].find(group);
+                for (let e in options.columns) {
+                  name = options.columns[e];
+                  t.push('td', '', options.formats[name](pivot.margins[dim+1].data[name][i] ));
+                }
               }
             }
           }
-        }
-      );
-      // grand total
-      if (options.row_totals && options.column_totals) {
-        for (let j=0; j < options.columns.length; j++) {
-          let name = options.columns[j];
-          t.push('td', '', options.formats[name](pivot.total[name]));
+        );
+        // grand total
+        if (options.row_totals && options.column_totals && pivot.dimensions.length < 3) {
+          for (let j=0; j < options.columns.length; j++) {
+            let name = options.columns[j];
+            t.push('td', '', options.formats[name](pivot.total[name]));
+          }
         }
       }
     }
@@ -276,14 +285,24 @@
       }
     }
 
+    // start the table
     if (this.dimensions.length === 2) {
       this.navigate(d0);
     } else {
+      // 3D tables
       let tabs = new Oj.Interface(0);
       tabs.follow = d0;
-      tabs.begin = function(group, leaves) {
-
+      tabs.init = function() {
+        div = div.push('div');
       }
+      tabs.begin = function(group, leaves) {
+        div.push('h3', {style: 'text-align: center'}, group.toString());
+      }
+      tabs.end = function(group, leaves) {
+        console.log(group);
+        
+      }
+      this.navigate(tabs);
     }
 
 

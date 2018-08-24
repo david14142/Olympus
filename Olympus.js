@@ -629,6 +629,13 @@ const SUBTOTAL = Symbol('oj-subtotal');
       this.margins[d].reorder('pivot-order', dimensions[d]);
       this.leaf(this.margins[d].indices['pivot-order'].root);
     }
+    // for 3-d pivots, create page totals
+    if (this.dimensions.length > 2) {
+      let d = dimensions[0].concat(dimensions[2]);
+      this.page_total = this.aggregate(d, this.expression);
+      this.page_total.reorder('pivot-order', d);
+      this.page_grand_total = this.margins[0];
+    }
     this.subtotals = [];
     this.subtotal_dim = [];
   }
@@ -638,6 +645,7 @@ const SUBTOTAL = Symbol('oj-subtotal');
     this.subtotal_dim = this.subtotal_dim || [];
     var intersection;
     var columns;
+
     let addend = function(node, crossing=[]) {
       let keys = Array.from(node.keys());
       for (let k=0; k < keys.length; k++) {
@@ -668,11 +676,14 @@ const SUBTOTAL = Symbol('oj-subtotal');
     // now add to the subtotals to the margins
     var n = this.subtotals.length-1;
     for (let m=0; m < this.margins.length; m++) {
-      columns = intersect(this.dimensions[m], subtotal);
-      intersection = this.aggregate(columns, this.expression);
-      intersection.reorder('subtotal-order', columns);
-      addend(this.margins[m].indices['pivot-order'].root);
-      this.leaf(this.margins[m].indices['pivot-order'].root);
+      let columns = intersect(this.dimensions[m], subtotal);
+      if (columns.length > 0) {
+        intersection = this.aggregate(columns, this.expression);
+        intersection.reorder('subtotal-order', columns);
+        //console.log(intersection);
+        addend(this.margins[m].indices['pivot-order'].root);
+        this.leaf(this.margins[m].indices['pivot-order'].root);
+      }
     }
   }
 
@@ -704,9 +715,9 @@ const SUBTOTAL = Symbol('oj-subtotal');
 
   Oj.PivotTable.prototype.navigate = function(i = new Oj.Interface(), crossing=[]) {
     let node = this.margins[i.dimension].indices['pivot-order'].root;
-    i.init(node.leaves);
+    i.init();
     this.collate(node, i, crossing);
-    i.final(node.leaves);
+    i.final();
   }
 
   Oj.PivotTable.prototype.collate = function(node, i, crossing) {
