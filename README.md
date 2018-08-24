@@ -5,11 +5,13 @@ JavaScript functions to facilitate multivariate summaries of data.
 ## Introduction
 
 The Olympus libraries allow summarisation of multivariate data
-in a browser using only JavaScript. &nbsp;  The aim is to support fast and
- efficient cross tabulation &amp; pivoting of moderate amounts of data
- without relying on either server side or desktop software.  A typical
- use case would be to produce a CSV or JSON file from a database and have
- multiple dynamic tables produced in the browser with minimal (~3 lines) coding.
+in a browser using only JavaScript. &nbsp;  
+
+The aim is to support fast and efficient **cross tabulation &amp; pivoting**
+of moderate amounts of data without relying on either server side or
+desktop software.  A typical use case would be to produce a CSV or JSON file
+from a database and have multiple dynamic tables produced in the browser
+with a minimum (~3-4 lines) of code.
 
 ## Example
 
@@ -18,7 +20,8 @@ http://david14142.github.io/new_zealand_population_demo.html
 
 # Use
 
-*Warning - this project is a prototype.  There may be bugs, and the internal structure and methods of the library **will** change.*
+*Warning - this project is a prototype.  There may be bugs, and the internal
+structure and methods of the library **will** change.*
 
 *This documentation is incomplete: merging, sorting,
 filtering and indexing still require coverage.*
@@ -51,6 +54,36 @@ is created with the data:
     fetch('data.json')
       .then(response => response.json())
       .then(json => {table = new Oj.DataFrame(json)});
+
+### Pivot tables vs Frames
+
+Olympus works with two related objects, a *data frame*, which is essentially
+just a collection of arrays, and a *pivot table*, which includes data
+summarised by various *dimensions*.  Pivot tables extend data frames - they
+have additional methods for dealing with multidimensional data, and they store
+summaries and margins.
+
+Pivot tables can be created in much the same way as data frames.  In addition
+to the data, they require specifying the *summarisation expressions*
+and *dimensions* in order to function:
+
+    pivot = new Oj.PivotTable(
+      json,
+      {Population: Oj.sum('Population')},
+      [['Ethnicity','Sex'],['Year']]
+      );
+
+In this case we tell the pivot table to summarise population, using both
+ethnicity as sex as rows, and the *values of* the year variable as columns.
+
+### Displaying tables
+
+Pivot tables can be displayed inside an html document using the `table()` method:
+
+    <div id='table'>
+    <script>  
+      pivot.table({id: 'table'})
+    </script>
 
 ## Mapping
 
@@ -109,7 +142,7 @@ of variables that define the groups, as well as the reduction function(s).
 
 The result is a new table that contains the results of the
 reduction function for each group.  By default the group variables are
-not added to the table as columns &ndash instead they form an
+not added to the table as columns &ndash; instead they form an
 index structure that can be used to traverse the data. If needed,
 the groups can be added as columns using the `surface()` method.
 
@@ -138,6 +171,8 @@ City, and Year; and then create an HTML table inside the element with the
 
 *To be completed*
 
+## Data
+
 Olympus works with data stored internally as a *collection of named
 arrays*. &nbsp; Each array is a column of data.  These are
 native JavaScript arrays - values in the arrays can be strings or
@@ -151,3 +186,36 @@ numbers. &nbsp; (Objects, Arrays and Maps are not supported and will
       "ETHNICGROUP": ["EUROTHER","EUROTHER","EUROTHER","EUROTHER","EUROTHER", ...
       "Age":["0 Years","0 Years","0 Years","0 Years","0 Years","0 Years", ...
     }
+
+## Index structures
+
+Index structures are key to the ability to aggregate data into groups, as well
+as display data in sorted order, and joining (merging).  Olympus uses two types
+of indexes, both tree-like structures based on recursively linked JavaScript
+`Map` objects.
+
+Each level of the tree structure corresponds to a variable in the index.  The
+top level of the tree is a single node (a `Map`).  Each key in this node is a
+value of the first variable in the index.  Every entry points to a another node,
+in the second layer of the tree, and so on.  At the last layer, the entries in
+the node point to row(s) in the data.
+
+Index structures are important to the `aggregate` and `dimension` methods
+&ndash; they allow the reducers to efficiently access accumulated results for
+numerous groups.
+
+### Walking indexes
+
+
+
+### Surfacing indexes
+
+By default the `aggregate` and `dimension` methods do not "surface" the values
+of their group variables.  For example, when aggregating 'population', by the
+dimensions 'age' and 'sex', the 'age', and 'sex' variables are not added to
+the summary data structure.  Instead, they are only present in the indexes.  
+
+This does not affect internal operations, such as tabulating or merging data.
+However, when viewing data (e.g. in the console), it can be useful to 'surface'
+an index.  The `surface()` method adds the entries of the indexes as columns in
+the data frame.
